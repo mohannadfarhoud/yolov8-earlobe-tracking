@@ -22,13 +22,35 @@
   }
 
   function datasetRoot() {
-    var v = ($('dataset-root') || {}).value;
-    if (!v || !String(v).trim()) throw new Error('Enter dataset folder path');
-    return String(v).trim();
+    var el = $('dataset-root');
+    if (!el) throw new Error('Dataset path field missing — refresh page (Ctrl+F5)');
+    var v = (el.value || '').trim();
+    if (!v) {
+      throw new Error(
+        'Enter dataset folder path in the box above (e.g. C:\\earlobe-tracking\\earlobe), then click "1. Setup folder".'
+      );
+    }
+    return v;
   }
 
   function rootQuery() {
     return '?root=' + encodeURIComponent(datasetRoot());
+  }
+
+  function savePathToStorage() {
+    try {
+      var v = ($('dataset-root').value || '').trim();
+      if (v) localStorage.setItem('earlobe_dataset_root', v);
+    } catch (_) {}
+  }
+
+  async function ensureDatasetReady() {
+    var root = datasetRoot();
+    savePathToStorage();
+    return api('/api/annotate/init', {
+      method: 'POST',
+      body: JSON.stringify({ root: root }),
+    });
   }
 
   async function api(path, options) {
@@ -197,17 +219,35 @@
       placeMarker(x, y);
     });
 
+    var pathInput = $('dataset-root');
+    if (pathInput) {
+      try {
+        var saved = localStorage.getItem('earlobe_dataset_root');
+        if (saved && !pathInput.value) pathInput.value = saved;
+      } catch (_) {}
+      pathInput.addEventListener('input', function () {
+        savePathToStorage();
+        setLog('log-annotate', '', false);
+      });
+    }
+
     $('btn-init').addEventListener('click', async function () {
       setLog('log-annotate', 'Setting up…');
       try {
-        var r = await api('/api/annotate/init', {
-          method: 'POST',
-          body: JSON.stringify({ root: datasetRoot() }),
-        });
+        var r = await ensureDatasetReady();
         updateStats(r.total, r.annotated);
         await refreshImageList();
         await loadCurrentImage();
-        setLog('log-annotate', 'Ready. Upload images, then click each earlobe.');
+        setLog('log-annotate', 'Setup OK at: ' + datasetRoot() + '\nNow click "2. Upload images".');
+      } catch (e) {
+        setLog('log-annotate', String(e), true);
+      }
+    });
+
+    $('btn-upload').addEventListener('click', function () {
+      try {
+        datasetRoot();
+        $('file-upload').click();
       } catch (e) {
         setLog('log-annotate', String(e), true);
       }
@@ -217,18 +257,22 @@
       var files = ev.target.files;
       if (!files || !files.length) return;
       setLog('log-annotate', 'Uploading ' + files.length + ' file(s)…');
-      var fd = new FormData();
-      for (var i = 0; i < files.length; i++) fd.append('files', files[i]);
       try {
+        await ensureDatasetReady();
+        var fd = new FormData();
+        for (var i = 0; i < files.length; i++) fd.append('files', files[i]);
         var res = await fetch('/api/annotate/upload' + rootQuery(), { method: 'POST', body: fd });
         var data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Upload failed');
+        if (!res.ok) {
+          var errMsg = data.detail || data.message || 'Upload failed';
+          throw new Error(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg));
+        }
         updateStats(data.total, data.annotated);
         await refreshImageList();
         annotateState.index = findNextUnannotated(0);
         if (annotateState.index < 0) annotateState.index = 0;
         await loadCurrentImage();
-        setLog('log-annotate', 'Uploaded: ' + (data.saved || []).join(', '));
+        setLog('log-annotate', 'Uploaded: ' + (data.saved || []).join(', ') + '\nClick the earlobe on the image.');
         ev.target.value = '';
       } catch (e) {
         setLog('log-annotate', String(e), true);
@@ -277,6 +321,7 @@
 
     $('btn-split-val').addEventListener('click', async function () {
       try {
+        await ensureDatasetReady();
         var r = await api('/api/annotate/split-val', {
           method: 'POST',
           body: JSON.stringify({ root: datasetRoot() }),
@@ -398,6 +443,7 @@
     initExport();
     initGpu();
     checkHealth();
+    setLog('log-annotate', 'Enter path → "1. Setup folder" → "2. Upload images".', false);
   }
 
   if (document.readyState === 'loading') {

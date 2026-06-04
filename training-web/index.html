@@ -23,21 +23,26 @@
     <main>
       <section id="panel-annotate" class="panel active">
         <h2>Upload &amp; label earlobe</h2>
+        <ol class="steps-hint">
+          <li>Enter dataset folder path below</li>
+          <li>Click <strong>Setup folder</strong> (once)</li>
+          <li>Click <strong>Upload images</strong> and choose face photos</li>
+          <li>Click each earlobe → <strong>Save &amp; next</strong></li>
+        </ol>
         <label>
           Dataset folder
           <input
             type="text"
             id="dataset-root"
+            value="C:\earlobe-tracking\earlobe"
             placeholder="C:\earlobe-tracking\earlobe"
             spellcheck="false"
           />
         </label>
         <div class="row">
-          <button type="button" id="btn-init" class="primary">Setup folder</button>
-          <label class="file-btn">
-            Upload images
-            <input type="file" id="file-upload" accept="image/*" multiple hidden />
-          </label>
+          <button type="button" id="btn-init" class="primary">1. Setup folder</button>
+          <button type="button" id="btn-upload" class="file-btn">2. Upload images</button>
+          <input type="file" id="file-upload" accept="image/jpeg,image/png,image/webp,image/bmp" multiple hidden />
           <button type="button" id="btn-split-val">Split 15% to val</button>
         </div>
         <p id="annotate-stats" class="hint">0 images · 0 annotated</p>
@@ -101,6 +106,6 @@
       </section>
     </main>
 
-    <script defer src="/assets/app.js?v=3"></script>
+    <script defer src="/assets/app.js?v=4"></script>
   </body>
 </html>
