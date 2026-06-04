@@ -7,6 +7,22 @@
 
 ---
 
+## Training UI (easiest)
+
+```powershell
+pip install -r requirements.txt
+python python/training_ui.py
+```
+
+Open **http://127.0.0.1:7860** and use the tabs:
+
+1. **GPU** — Check RTX / CUDA  
+2. **Dataset** — Create folders, save `data.yaml`, validate  
+3. **Train** — Start training + ONNX export (live log)  
+4. **Model** — Verify `best.onnx`  
+
+---
+
 ## Step 1 — Create dataset folders
 
 On your training PC:

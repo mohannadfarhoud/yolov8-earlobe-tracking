@@ -5,3 +5,4 @@ onnx>=1.15.0
 onnxruntime>=1.17.0
 onnxsim>=0.4.36
 PyYAML>=6.0
+gradio>=4.44.0
