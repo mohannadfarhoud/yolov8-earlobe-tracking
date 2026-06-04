@@ -50,11 +50,51 @@ def count_images(images_dir: Path) -> int:
     return sum(1 for p in images_dir.iterdir() if p.suffix.lower() in IMAGE_EXTS)
 
 
+def scan_for_assets(root: Path) -> None:
+    """Print where images/labels actually live under the dataset root."""
+    print("\nScanning dataset root for images and labels...")
+    if not root.is_dir():
+        print(f"  ERROR: dataset root does not exist: {root}")
+        return
+
+    def count_in_dir(d: Path, exts: set[str]) -> int:
+        if not d.is_dir():
+            return 0
+        return sum(1 for p in d.iterdir() if p.is_file() and p.suffix.lower() in exts)
+
+    for name in sorted(root.iterdir()):
+        if not name.is_dir():
+            continue
+        n_img = count_in_dir(name, IMAGE_EXTS) if name.name == "images" else 0
+        n_lbl = count_in_dir(name, {".txt"}) if name.name == "labels" else 0
+        if name.name == "images":
+            for sub in sorted(name.iterdir()):
+                if sub.is_dir():
+                    ni = count_in_dir(sub, IMAGE_EXTS)
+                    if ni:
+                        print(f"  Found {ni} images in: {sub}")
+            if n_img:
+                print(f"  Found {n_img} images in: {name} (root of images/, not in train/val)")
+        elif name.name == "labels":
+            for sub in sorted(name.iterdir()):
+                if sub.is_dir():
+                    nl = count_in_dir(sub, {".txt"})
+                    if nl:
+                        print(f"  Found {nl} labels in: {sub}")
+            if n_lbl:
+                print(f"  Found {n_lbl} labels in: {name} (root of labels/, not in train/val)")
+        else:
+            ni = count_in_dir(name, IMAGE_EXTS)
+            nl = count_in_dir(name, {".txt"})
+            if ni or nl:
+                print(f"  Found {ni} images, {nl} labels in: {name}")
+
+
 def count_label_lines(label_dir: Path) -> tuple[int, list[str]]:
     errors: list[str] = []
     labels = 0
     if not label_dir.is_dir():
-        return 0, [f"missing labels directory: {label_dir}"]
+        return 0, []
 
     for txt in label_dir.glob("*.txt"):
         labels += 1
@@ -120,7 +160,7 @@ def validate(data_yaml: Path) -> int:
         if not labels_dir.is_dir():
             print(f"    ERROR: missing labels directory: {labels_dir}")
             exit_code = 1
-        if n_labels == 0:
+        elif n_labels == 0:
             print(f"    ERROR: no .txt labels found in {labels_dir}")
             exit_code = 1
         for e in errs[:10]:
@@ -134,13 +174,14 @@ def validate(data_yaml: Path) -> int:
     print("Selection rule: highest_conf (config/tracking.json)")
 
     if exit_code != 0:
-        print("\nRecommended data.yaml (dataset root = project folder, NOT images/):")
-        print("  path: C:/earlobe-tracking/yolov8-earlobe-tracking")
-        print("  train: images/train")
-        print("  val: images/val")
-        print("\nExpected folders:")
-        print("  images/train/*.jpg   labels/train/*.txt")
-        print("  images/val/*.jpg     labels/val/*.txt")
+        scan_for_assets(root)
+        print("\nYour data.yaml paths look correct. Create missing folders and add files:")
+        print("  mkdir images\\train, images\\val, labels\\train, labels\\val")
+        print("  Move ~80-90% of pairs into train/, rest into val/ (same base names).")
+        print("\nEach image needs a matching label, e.g.:")
+        print("  images/train/photo001.jpg  <->  labels/train/photo001.txt")
+        print("\nIf files are only in images/ and labels/ (no train/val subfolders), run:")
+        print("  PowerShell: see README 'Split dataset into train/val' or move files manually.")
         return 1
 
     print("\nOK: dataset structure and labels validated.")

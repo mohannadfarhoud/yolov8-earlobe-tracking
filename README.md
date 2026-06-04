@@ -19,8 +19,25 @@ Copy `data.example.yaml` to `data.yaml` and set `path`, `train`, `val` to your d
 
 ## Phase 0.5 — Validate dataset
 
+Expected layout:
+
+```text
+project/
+  data.yaml
+  images/train/*.jpg   labels/train/*.txt
+  images/val/*.jpg     labels/val/*.txt
+```
+
 ```bash
 python python/validate_dataset.py --data data.yaml
+```
+
+If images are only in `images/` and labels in `labels/` (no train/val yet):
+
+```powershell
+mkdir images\train, images\val, labels\train, labels\val
+# Or auto-split ~85% train / 15% val from flat folders:
+python python/split_train_val.py --root .
 ```
 
 ## Phase 1 — Train & export
