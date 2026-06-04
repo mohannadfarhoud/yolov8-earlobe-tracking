@@ -13,14 +13,16 @@ Train a YOLOv8-pose model on your earlobe dataset, export `best.onnx`, then use 
 
 ### 1. Dataset + train (RTX PC)
 
-**Training UI (recommended):**
+**Training web UI (recommended):**
 
 ```powershell
-pip install gradio
-python python/training_ui.py
+pip install -r requirements.txt
+python python/training_server.py
 ```
 
-Open **http://127.0.0.1:7860** — create folders, save `data.yaml`, validate, train, verify ONNX.
+Open **http://127.0.0.1:8000** — create folders, save `data.yaml`, validate, train, verify ONNX.
+
+(Alternative: `python python/training_ui.py` Gradio UI on port 7860.)
 
 **Or command line:**
 

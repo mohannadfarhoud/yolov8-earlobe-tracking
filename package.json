@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "setup-dirs": "python python/setup_dataset_dirs.py",
-    "train-ui": "python python/training_ui.py"
+    "train-ui": "python python/training_server.py"
   },
   "dependencies": {
     "onnxruntime-web": "^1.20.0",

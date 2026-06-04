@@ -7,14 +7,14 @@
 
 ---
 
-## Training UI (easiest)
+## Training web UI (easiest)
 
 ```powershell
 pip install -r requirements.txt
-python python/training_ui.py
+python python/training_server.py
 ```
 
-Open **http://127.0.0.1:7860** and use the tabs:
+Open **http://127.0.0.1:8000** and use the tabs:
 
 1. **GPU** — Check RTX / CUDA  
 2. **Dataset** — Create folders, save `data.yaml`, validate  

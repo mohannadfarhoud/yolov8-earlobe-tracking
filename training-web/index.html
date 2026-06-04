@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Earlobe Training</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Earlobe model training</h1>
+      <p>Local training on your RTX PC → exports <code>public/models/best.onnx</code> for the browser library.</p>
+    </header>
+
+    <nav class="tabs" role="tablist">
+      <button type="button" class="tab active" data-tab="gpu">GPU</button>
+      <button type="button" class="tab" data-tab="dataset">Dataset</button>
+      <button type="button" class="tab" data-tab="train">Train</button>
+      <button type="button" class="tab" data-tab="model">Model</button>
+    </nav>
+
+    <main>
+      <section id="panel-gpu" class="panel active">
+        <h2>Environment</h2>
+        <p>Confirm CUDA and your GPU before training.</p>
+        <button type="button" id="btn-gpu" class="primary">Check GPU</button>
+        <pre id="log-gpu" class="log"></pre>
+      </section>
+
+      <section id="panel-dataset" class="panel">
+        <h2>Dataset</h2>
+        <label>
+          Dataset root folder
+          <input
+            type="text"
+            id="dataset-root"
+            placeholder="C:\earlobe-tracking\earlobe"
+            spellcheck="false"
+          />
+        </label>
+        <p class="hint">Must end up with <code>images/train</code>, <code>labels/train</code>, etc.</p>
+        <div class="row">
+          <button type="button" id="btn-setup">Create folders</button>
+          <button type="button" id="btn-save-yaml" class="primary">Save data.yaml</button>
+          <button type="button" id="btn-validate">Validate dataset</button>
+        </div>
+        <pre id="log-dataset" class="log"></pre>
+      </section>
+
+      <section id="panel-train" class="panel">
+        <h2>Train</h2>
+        <p>Runs YOLOv8-pose training and ONNX export. Can take a long time.</p>
+        <div class="grid">
+          <label>Epochs <input type="number" id="epochs" value="100" min="10" max="300" step="10" /></label>
+          <label>Batch <input type="number" id="batch" value="16" min="1" max="32" /></label>
+          <label>Image size
+            <select id="imgsz">
+              <option value="640" selected>640</option>
+              <option value="416">416</option>
+            </select>
+          </label>
+          <label>GPU device <input type="text" id="device" value="0" /></label>
+          <label>Patience <input type="number" id="patience" value="20" min="5" max="50" /></label>
+        </div>
+        <button type="button" id="btn-train" class="primary">Start training</button>
+        <span id="train-badge" class="badge hidden">Running…</span>
+        <pre id="log-train" class="log tall"></pre>
+      </section>
+
+      <section id="panel-model" class="panel">
+        <h2>Model files</h2>
+        <button type="button" id="btn-status">Refresh status</button>
+        <button type="button" id="btn-verify" class="primary">Verify ONNX</button>
+        <pre id="log-model" class="log"></pre>
+        <p class="hint">After <code>best.onnx</code> exists, use <code>src/earlobe-tracker.js</code> in your web app.</p>
+      </section>
+    </main>
+
+    <script type="module" src="/assets/app.js"></script>
+  </body>
+</html>
