@@ -9,6 +9,8 @@ from pathlib import Path
 
 from ultralytics import YOLO
 
+from validate_dataset import validate
+
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATA = ROOT / "data.yaml"
 ONNX_OUT = ROOT / "public" / "models" / "best.onnx"
@@ -97,8 +99,14 @@ def main() -> None:
                 f"data.yaml not found: {args.data}\n"
                 "Copy data.example.yaml to data.yaml and point path/train/val at your dataset."
             )
+        data_path = args.data.resolve()
+        if validate(data_path) != 0:
+            raise SystemExit(
+                "Dataset validation failed. Fix images/labels folders before training.\n"
+                "Run: python python/validate_dataset.py --data data.yaml"
+            )
         weights = train(
-            data=args.data.resolve(),
+            data=data_path,
             epochs=args.epochs,
             imgsz=args.imgsz,
             batch=args.batch,
