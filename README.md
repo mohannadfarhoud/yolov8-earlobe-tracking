@@ -1,6 +1,38 @@
-# Real-Time Earlobe Tracking & 3D Earring Try-On
+# Earlobe tracking (train + browser library)
 
-Local webcam app: custom YOLOv8-pose ONNX finds the earlobe; Three.js renders an earring overlay. **All inference runs in the browser** — no uploads.
+Train a YOLOv8-pose model on your earlobe dataset, export `best.onnx`, then use **`createEarlobeTracker()`** in any webpage to get `{ x, y, confidence }`. All inference runs in the browser.
+
+**Full guide:** [docs/TRAINING_AND_LIBRARY.md](docs/TRAINING_AND_LIBRARY.md)
+
+**Library entry:** `src/earlobe-tracker.js`  
+**Demo (no try-on):** `examples/earlobe-only.html` after `npm run dev`
+
+---
+
+## Quick start
+
+### 1. Dataset + train (RTX PC)
+
+```powershell
+python python/setup_dataset_dirs.py --root C:\earlobe-tracking\earlobe
+# Add images + labels, copy data.template.yaml → data.yaml
+python python/validate_dataset.py --data data.yaml
+python python/train.py --data data.yaml
+```
+
+### 2. Library in your page
+
+```javascript
+import { createEarlobeTracker } from './src/earlobe-tracker.js';
+const tracker = await createEarlobeTracker({ modelUrl: '/models/best.onnx' });
+const point = await tracker.detect(videoElement);
+```
+
+---
+
+## Optional: 3D try-on demo
+
+The repo also includes a Three.js earring overlay (`npm run dev` → main `index.html`). You can ignore that if you only need coordinates.
 
 ## Prerequisites
 

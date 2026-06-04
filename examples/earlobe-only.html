@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Earlobe tracker demo</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        background: #111;
+        color: #eee;
+        text-align: center;
+      }
+      .wrap {
+        position: relative;
+        display: inline-block;
+      }
+      video {
+        width: 640px;
+        max-width: 100%;
+        transform: scaleX(-1);
+      }
+      #dot {
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        margin: -6px 0 0 -6px;
+        border-radius: 50%;
+        background: #f0f;
+        display: none;
+        pointer-events: none;
+      }
+      #status {
+        margin-top: 1rem;
+        color: #aaa;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Earlobe library demo</h1>
+    <p>Requires <code>public/models/best.onnx</code> after training.</p>
+    <div class="wrap">
+      <video id="cam" playsinline muted autoplay></video>
+      <div id="dot"></div>
+    </div>
+    <p id="status">Loading model…</p>
+    <script type="module">
+      import { createEarlobeTracker } from '../src/earlobe-tracker.js';
+
+      const video = document.getElementById('cam');
+      const dot = document.getElementById('dot');
+      const status = document.getElementById('status');
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' },
+        audio: false,
+      });
+      video.srcObject = stream;
+      await video.play();
+
+      const tracker = await createEarlobeTracker({
+        modelUrl: '/models/best.onnx',
+        mirrorX: true,
+      });
+      status.textContent = 'Model ready';
+
+      async function loop() {
+        const p = await tracker.detect(video);
+        if (p && p.confidence > 0.5) {
+          const rect = video.getBoundingClientRect();
+          const sx = rect.width / video.videoWidth;
+          const sy = rect.height / video.videoHeight;
+          dot.style.display = 'block';
+          dot.style.left = `${p.x * sx}px`;
+          dot.style.top = `${p.y * sy}px`;
+          status.textContent = `earlobe: ${p.x.toFixed(0)}, ${p.y.toFixed(0)} conf=${p.confidence.toFixed(2)}`;
+        } else {
+          dot.style.display = 'none';
+          status.textContent = 'No earlobe detected';
+        }
+        setTimeout(loop, 33);
+      }
+      loop();
+    </script>
+  </body>
+</html>
