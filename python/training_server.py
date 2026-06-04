@@ -98,10 +98,38 @@ app.add_middleware(
 )
 
 
+@app.get("/api/health")
+def api_health():
+    return {"ok": True, "python": sys.executable, "project": str(ROOT)}
+
+
 @app.get("/api/environment")
 def api_environment():
-    code, text = run_cmd("check_env.py")
-    return {"ok": code == 0, "output": text}
+    """Run GPU check in-process (subprocess + torch import can hang/silence on Windows)."""
+    lines: list[str] = []
+    try:
+        import torch
+
+        cuda = torch.cuda.is_available()
+        lines.append(f"torch.cuda.is_available(): {cuda}")
+        if cuda:
+            lines.append(f"GPU: {torch.cuda.get_device_name(0)}")
+            lines.append(f"CUDA version: {torch.version.cuda}")
+        else:
+            lines.append("WARN: CUDA not available — training will use CPU (very slow).")
+            lines.append("Install CUDA PyTorch: pip install torch --index-url https://download.pytorch.org/whl/cu124")
+        try:
+            from ultralytics import YOLO  # noqa: F401
+
+            lines.append("ultralytics: OK")
+        except ImportError:
+            lines.append("ERROR: ultralytics not installed — pip install -r requirements.txt")
+            return {"ok": False, "output": "\n".join(lines)}
+        lines.append(f"Python: {sys.executable}")
+        return {"ok": True, "output": "\n".join(lines)}
+    except Exception as e:
+        lines.append(f"ERROR: {e}")
+        return {"ok": False, "output": "\n".join(lines)}
 
 
 @app.post("/api/dataset/setup")
@@ -231,8 +259,14 @@ def index():
     return FileResponse(index_file)
 
 
-if WEB_DIR.is_dir():
-    app.mount("/assets", StaticFiles(directory=WEB_DIR), name="assets")
+@app.get("/assets/app.js")
+def asset_js():
+    return FileResponse(WEB_DIR / "app.js", media_type="application/javascript")
+
+
+@app.get("/assets/styles.css")
+def asset_css():
+    return FileResponse(WEB_DIR / "styles.css", media_type="text/css")
 
 
 def main() -> None:

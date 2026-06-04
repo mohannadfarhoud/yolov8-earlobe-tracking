@@ -27,6 +27,16 @@ header p {
   font-size: 0.95rem;
 }
 
+.api-status {
+  margin-top: 0.5rem !important;
+  font-size: 0.85rem !important;
+  color: #7eb8ff !important;
+}
+
+.api-status.error {
+  color: #f0a8a8 !important;
+}
+
 code {
   background: #243044;
   padding: 0.1em 0.35em;

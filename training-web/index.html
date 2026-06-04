@@ -10,6 +10,7 @@
     <header>
       <h1>Earlobe model training</h1>
       <p>Local training on your RTX PC → exports <code>public/models/best.onnx</code> for the browser library.</p>
+      <p id="api-status" class="api-status">Connecting to server…</p>
     </header>
 
     <nav class="tabs" role="tablist">
@@ -24,7 +25,7 @@
         <h2>Environment</h2>
         <p>Confirm CUDA and your GPU before training.</p>
         <button type="button" id="btn-gpu" class="primary">Check GPU</button>
-        <pre id="log-gpu" class="log"></pre>
+        <pre id="log-gpu" class="log">Loading page…</pre>
       </section>
 
       <section id="panel-dataset" class="panel">
@@ -76,6 +77,6 @@
       </section>
     </main>
 
-    <script type="module" src="/assets/app.js"></script>
+    <script defer src="/assets/app.js?v=2"></script>
   </body>
 </html>
