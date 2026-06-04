@@ -1,5 +1,6 @@
-# Copy to your dataset location and pass to train.py / validate_dataset.py
-path: ./dataset
+# Copy to data.yaml — path must be the DATASET ROOT (parent of images/ and labels/)
+# NOT the images/ folder itself.
+path: .
 train: images/train
 val: images/val
 nc: 1

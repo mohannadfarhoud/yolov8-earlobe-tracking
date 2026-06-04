@@ -4,8 +4,27 @@ Training, validation, and the browser decoder must share this schema.
 
 ## data.yaml requirements
 
-- `path`: dataset root (absolute or relative to yaml file)
-- `train` / `val`: image directories or split files
+- `path`: **dataset root** — the folder that contains both `images/` and `labels/` (not the `images/` folder alone)
+- `train` / `val`: paths **under images/**, e.g. `images/train` and `images/val`
+
+Example layout:
+
+```text
+yolov8-earlobe-tracking/
+  data.yaml
+  images/train/*.jpg
+  images/val/*.jpg
+  labels/train/*.txt
+  labels/val/*.txt
+```
+
+Example `data.yaml`:
+
+```yaml
+path: C:/earlobe-tracking/yolov8-earlobe-tracking
+train: images/train
+val: images/val
+```
 - `nc`: number of classes (typically `1` for earlobe)
 - `names`: class index to name map (e.g. `0: earlobe`)
 - `kpt_shape`: `[num_keypoints, 3]` — e.g. `[1, 3]` for one earlobe (x, y, visibility)
