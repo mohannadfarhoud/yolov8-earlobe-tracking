@@ -16,10 +16,10 @@ python python/training_server.py
 
 Open **http://127.0.0.1:8000** and use the tabs:
 
-1. **GPU** — Check RTX / CUDA  
-2. **Dataset** — Create folders, save `data.yaml`, validate  
-3. **Train** — Start training + ONNX export (live log)  
-4. **Model** — Verify `best.onnx`  
+1. **Annotate** — Setup folder, upload images, click earlobe on each face, Save & next  
+2. **Train** — Prepare for training → Start training  
+3. **Export** — Export web library (ZIP + folder)  
+4. **GPU** — Optional CUDA check  
 
 ---
 

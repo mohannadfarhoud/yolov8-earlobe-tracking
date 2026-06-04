@@ -9,29 +9,22 @@
   <body>
     <header>
       <h1>Earlobe model training</h1>
-      <p>Local training on your RTX PC → exports <code>public/models/best.onnx</code> for the browser library.</p>
+      <p>Upload faces → click earlobe → train → export web library.</p>
       <p id="api-status" class="api-status">Connecting to server…</p>
     </header>
 
     <nav class="tabs" role="tablist">
-      <button type="button" class="tab active" data-tab="gpu">GPU</button>
-      <button type="button" class="tab" data-tab="dataset">Dataset</button>
-      <button type="button" class="tab" data-tab="train">Train</button>
-      <button type="button" class="tab" data-tab="model">Model</button>
+      <button type="button" class="tab active" data-tab="annotate">1. Annotate</button>
+      <button type="button" class="tab" data-tab="train">2. Train</button>
+      <button type="button" class="tab" data-tab="export">3. Export</button>
+      <button type="button" class="tab" data-tab="gpu">GPU</button>
     </nav>
 
     <main>
-      <section id="panel-gpu" class="panel active">
-        <h2>Environment</h2>
-        <p>Confirm CUDA and your GPU before training.</p>
-        <button type="button" id="btn-gpu" class="primary">Check GPU</button>
-        <pre id="log-gpu" class="log">Loading page…</pre>
-      </section>
-
-      <section id="panel-dataset" class="panel">
-        <h2>Dataset</h2>
+      <section id="panel-annotate" class="panel active">
+        <h2>Upload &amp; label earlobe</h2>
         <label>
-          Dataset root folder
+          Dataset folder
           <input
             type="text"
             id="dataset-root"
@@ -39,18 +32,39 @@
             spellcheck="false"
           />
         </label>
-        <p class="hint">Must end up with <code>images/train</code>, <code>labels/train</code>, etc.</p>
         <div class="row">
-          <button type="button" id="btn-setup">Create folders</button>
-          <button type="button" id="btn-save-yaml" class="primary">Save data.yaml</button>
-          <button type="button" id="btn-validate">Validate dataset</button>
+          <button type="button" id="btn-init" class="primary">Setup folder</button>
+          <label class="file-btn">
+            Upload images
+            <input type="file" id="file-upload" accept="image/*" multiple hidden />
+          </label>
+          <button type="button" id="btn-split-val">Split 15% to val</button>
         </div>
-        <pre id="log-dataset" class="log"></pre>
+        <p id="annotate-stats" class="hint">0 images · 0 annotated</p>
+
+        <div class="annotate-layout">
+          <ul id="image-list" class="image-list"></ul>
+          <div class="annotate-stage">
+            <p class="hint">Click on the earlobe in the image. Then Save &amp; next.</p>
+            <div id="canvas-wrap" class="canvas-wrap">
+              <img id="annotate-img" alt="Select an image" />
+              <div id="annotate-marker" class="marker hidden"></div>
+            </div>
+            <p id="click-info" class="hint"></p>
+            <div class="row">
+              <button type="button" id="btn-save-anno" class="primary" disabled>Save &amp; next</button>
+              <button type="button" id="btn-skip-anno">Skip</button>
+            </div>
+          </div>
+        </div>
+        <pre id="log-annotate" class="log"></pre>
       </section>
 
       <section id="panel-train" class="panel">
-        <h2>Train</h2>
-        <p>Runs YOLOv8-pose training and ONNX export. Can take a long time.</p>
+        <h2>Train model</h2>
+        <p>Requires annotated images. Prepares val split and data.yaml automatically.</p>
+        <button type="button" id="btn-prepare" class="primary">Prepare for training</button>
+        <pre id="log-prepare" class="log short"></pre>
         <div class="grid">
           <label>Epochs <input type="number" id="epochs" value="100" min="10" max="300" step="10" /></label>
           <label>Batch <input type="number" id="batch" value="16" min="1" max="32" /></label>
@@ -60,7 +74,7 @@
               <option value="416">416</option>
             </select>
           </label>
-          <label>GPU device <input type="text" id="device" value="0" /></label>
+          <label>GPU <input type="text" id="device" value="0" /></label>
           <label>Patience <input type="number" id="patience" value="20" min="5" max="50" /></label>
         </div>
         <button type="button" id="btn-train" class="primary">Start training</button>
@@ -68,15 +82,25 @@
         <pre id="log-train" class="log tall"></pre>
       </section>
 
-      <section id="panel-model" class="panel">
-        <h2>Model files</h2>
-        <button type="button" id="btn-status">Refresh status</button>
-        <button type="button" id="btn-verify" class="primary">Verify ONNX</button>
-        <pre id="log-model" class="log"></pre>
-        <p class="hint">After <code>best.onnx</code> exists, use <code>src/earlobe-tracker.js</code> in your web app.</p>
+      <section id="panel-export" class="panel">
+        <h2>Export web library</h2>
+        <p>After training, export <code>best.onnx</code> + JS files for your website.</p>
+        <div class="row">
+          <button type="button" id="btn-export-lib" class="primary">Export web library</button>
+          <a id="link-download-zip" class="button-link hidden" href="/api/model/download-library" download
+            >Download ZIP</a
+          >
+        </div>
+        <pre id="log-export" class="log"></pre>
+      </section>
+
+      <section id="panel-gpu" class="panel">
+        <h2>GPU check</h2>
+        <button type="button" id="btn-gpu" class="primary">Check GPU</button>
+        <pre id="log-gpu" class="log">Loading…</pre>
       </section>
     </main>
 
-    <script defer src="/assets/app.js?v=2"></script>
+    <script defer src="/assets/app.js?v=3"></script>
   </body>
 </html>

@@ -8,20 +8,28 @@ Training web UI backend + static page.
 
 from __future__ import annotations
 
-import asyncio
+import shutil
 import subprocess
 import sys
 import threading
 from pathlib import Path
 
 import yaml
-from fastapi import FastAPI, HTTPException
+from annotate_utils import (
+    ensure_dataset_layout,
+    export_web_library,
+    list_images,
+    read_label,
+    split_train_to_val,
+    write_label,
+)
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 WEB_DIR = ROOT / "training-web"
 DATA_YAML = ROOT / "data.yaml"
 ONNX_PATH = ROOT / "public" / "models" / "best.onnx"
@@ -89,6 +97,47 @@ class TrainParams(BaseModel):
     patience: int = 20
 
 
+class SaveAnnotation(BaseModel):
+    root: str
+    split: str = "train"
+    filename: str
+    x: float
+    y: float
+    image_width: int
+    image_height: int
+
+
+def resolve_root(path: str) -> Path:
+    root = Path(path.strip()).resolve()
+    if not root.is_dir():
+        root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def safe_image_path(root: Path, split: str, filename: str) -> Path:
+    if split not in ("train", "val"):
+        raise HTTPException(400, "split must be train or val")
+    img = (root / "images" / split / Path(filename).name).resolve()
+    if not str(img).startswith(str(root.resolve())):
+        raise HTTPException(403, "invalid path")
+    if not img.is_file():
+        raise HTTPException(404, "image not found")
+    return img
+
+
+def save_data_yaml_for_root(root: Path) -> None:
+    cfg = {
+        "path": str(root).replace("\\", "/"),
+        "train": "images/train",
+        "val": "images/val",
+        "nc": 1,
+        "names": {0: "earlobe"},
+        "kpt_shape": [1, 3],
+    }
+    with DATA_YAML.open("w", encoding="utf-8") as f:
+        yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+
+
 app = FastAPI(title="Earlobe Training")
 app.add_middleware(
     CORSMiddleware,
@@ -152,18 +201,115 @@ def api_dataset_setup(body: DatasetRoot):
 
 @app.post("/api/dataset/config")
 def api_dataset_config(body: DatasetRoot):
-    root = Path(body.root.strip()).resolve()
-    cfg = {
-        "path": str(root).replace("\\", "/"),
-        "train": "images/train",
-        "val": "images/val",
-        "nc": 1,
-        "names": {0: "earlobe"},
-        "kpt_shape": [1, 3],
+    root = resolve_root(body.root)
+    ensure_dataset_layout(root)
+    save_data_yaml_for_root(root)
+    return {"ok": True, "path": str(DATA_YAML), "root": str(root)}
+
+
+@app.post("/api/annotate/init")
+def api_annotate_init(body: DatasetRoot):
+    root = resolve_root(body.root)
+    ensure_dataset_layout(root)
+    save_data_yaml_for_root(root)
+    items = list_images(root)
+    return {
+        "ok": True,
+        "root": str(root),
+        "total": len(items),
+        "annotated": sum(1 for i in items if i["annotated"]),
     }
-    with DATA_YAML.open("w", encoding="utf-8") as f:
-        yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
-    return {"ok": True, "path": str(DATA_YAML), "yaml": yaml.dump(cfg, sort_keys=False)}
+
+
+@app.post("/api/annotate/upload")
+async def api_annotate_upload(
+    root: str = Query(...),
+    files: list[UploadFile] = File(...),
+):
+    dataset = resolve_root(root)
+    ensure_dataset_layout(dataset)
+    train_dir = dataset / "images" / "train"
+    saved: list[str] = []
+    for uf in files:
+        if not uf.filename:
+            continue
+        ext = Path(uf.filename).suffix.lower()
+        if ext not in {".jpg", ".jpeg", ".png", ".bmp", ".webp"}:
+            continue
+        dest = train_dir / Path(uf.filename).name
+        n = 1
+        while dest.exists():
+            dest = train_dir / f"{Path(uf.filename).stem}_{n}{ext}"
+            n += 1
+        content = await uf.read()
+        dest.write_bytes(content)
+        saved.append(dest.name)
+    items = list_images(dataset)
+    return {
+        "ok": True,
+        "saved": saved,
+        "total": len(items),
+        "annotated": sum(1 for i in items if i["annotated"]),
+    }
+
+
+@app.get("/api/annotate/images")
+def api_annotate_images(root: str = Query(...)):
+    dataset = resolve_root(root)
+    return {"ok": True, "images": list_images(dataset)}
+
+
+@app.get("/api/annotate/image/{split}/{filename}")
+def api_annotate_image(split: str, filename: str, root: str = Query(...)):
+    dataset = resolve_root(root)
+    path = safe_image_path(dataset, split, filename)
+    return FileResponse(path)
+
+
+@app.get("/api/annotate/label/{split}/{stem}")
+def api_annotate_label(split: str, stem: str, root: str = Query(...)):
+    dataset = resolve_root(root)
+    label = read_label(dataset, split, stem)
+    return {"ok": True, "label": label}
+
+
+@app.post("/api/annotate/save")
+def api_annotate_save(body: SaveAnnotation):
+    dataset = resolve_root(body.root)
+    if body.image_width < 1 or body.image_height < 1:
+        raise HTTPException(400, "invalid image dimensions")
+    kx = body.x / body.image_width
+    ky = body.y / body.image_height
+    img_path = safe_image_path(dataset, body.split, body.filename)
+    write_label(dataset, body.split, img_path.stem, kx, ky)
+    items = list_images(dataset)
+    return {
+        "ok": True,
+        "label": f"labels/{body.split}/{img_path.stem}.txt",
+        "total": len(items),
+        "annotated": sum(1 for i in items if i["annotated"]),
+    }
+
+
+@app.post("/api/annotate/split-val")
+def api_annotate_split_val(body: DatasetRoot, ratio: float = Query(0.15)):
+    dataset = resolve_root(body.root)
+    result = split_train_to_val(dataset, val_ratio=ratio)
+    save_data_yaml_for_root(dataset)
+    return {"ok": True, **result, "images": list_images(dataset)}
+
+
+@app.post("/api/annotate/prepare-train")
+def api_annotate_prepare_train(body: DatasetRoot):
+    """Split val, save data.yaml, validate — run before training."""
+    dataset = resolve_root(body.root)
+    ensure_dataset_layout(dataset)
+    val_count = len(list((dataset / "images" / "val").glob("*")))
+    if val_count == 0:
+        split_train_to_val(dataset)
+    save_data_yaml_for_root(dataset)
+    code, text = run_cmd("validate_dataset.py", "--data", str(DATA_YAML))
+    return {"ok": code == 0, "output": text}
 
 
 @app.post("/api/dataset/validate")
@@ -191,6 +337,29 @@ def api_model_verify():
         raise HTTPException(400, "best.onnx not found — train first")
     code, text = run_cmd("verify_onnx.py")
     return {"ok": code == 0, "output": text}
+
+
+@app.post("/api/model/export-library")
+def api_model_export_library():
+    if not ONNX_PATH.is_file():
+        raise HTTPException(400, "best.onnx not found — train first")
+    try:
+        info = export_web_library(ROOT)
+        export_dir = Path(info["export_dir"])
+        zip_base = str(export_dir.parent / "earlobe-web-library")
+        if Path(zip_base + ".zip").is_file():
+            Path(zip_base + ".zip").unlink()
+        archive = shutil.make_archive(zip_base, "zip", export_dir)
+        code, text = run_cmd("verify_onnx.py")
+        return {
+            "ok": True,
+            "export_dir": str(export_dir),
+            "zip": archive,
+            "verify": text,
+            "message": "Copy export/web-library/ into your site, or download the zip.",
+        }
+    except FileNotFoundError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 def _train_worker(params: TrainParams) -> None:
@@ -262,6 +431,14 @@ def index():
 @app.get("/assets/app.js")
 def asset_js():
     return FileResponse(WEB_DIR / "app.js", media_type="application/javascript")
+
+
+@app.get("/api/model/download-library")
+def api_model_download_library():
+    zip_path = ROOT / "export" / "earlobe-web-library.zip"
+    if not zip_path.is_file():
+        raise HTTPException(404, "Run Export web library first")
+    return FileResponse(zip_path, filename="earlobe-web-library.zip", media_type="application/zip")
 
 
 @app.get("/assets/styles.css")
