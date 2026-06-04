@@ -1,0 +1,8 @@
+# Copy to your dataset location and pass to train.py / validate_dataset.py
+path: ./dataset
+train: images/train
+val: images/val
+nc: 1
+names:
+  0: earlobe
+kpt_shape: [1, 3]

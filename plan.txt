@@ -1,0 +1,119 @@
+# Engineering Plan: Real-Time Ear Tracking & 3D Earring Try-On Web App
+
+## Project Objective
+Build a Vite + vanilla JS real-time web application that captures a webcam feed, processes frames locally using a custom-trained YOLOv8-pose ONNX model to find the precise anatomical earlobe, and renders a 3D earring model (.glb/.gltf) using Three.js at the decoded keypoint coordinates.
+
+---
+
+## System Architecture & Stack
+- **AI Model:** Custom YOLOv8-nano-pose (Input: 640x640x3 RGB, Output: Keypoints tracking earlobe anatomy).
+- **Inference Engine:** `onnxruntime-web` (WebGPU / WebGL / WASM execution providers).
+- **3D Rendering:** `three.js` (transparent WebGLRenderer; MVP screen-space orthographic attach).
+- **Bundler:** Vite + ES modules.
+- **Privacy:** All inference local in browser; no frame upload.
+
+```text
+Dataset -> train.py -> best.onnx -> onnxruntime-web -> decoder -> Three.js overlay
+```
+
+---
+
+## Phase 0.5: Dataset Contract
+- [x] **Task 0.1: data.yaml validation**
+  - `python/validate_dataset.py` checks required keys, `kpt_shape`, label line format.
+  - See `docs/DATASET_CONTRACT.md` and `data.example.yaml`.
+- [x] **Task 0.2: Label contract**
+  - Earlobe keypoint index: `0` (`config/tracking.json`).
+  - Selection rule: `highest_conf` | `largest_box` | `center_nearest`.
+
+---
+
+## Phase 1: Local Environment & Training Pipeline (Python)
+- [x] **Task 1.1: Verification Script**
+  - `python/check_env.py` — CUDA check; warns on CPU fallback.
+- [x] **Task 1.2: Training Setup**
+  - `python/train.py` — Ultralytics YOLOv8n-pose; `epochs=100`, `imgsz=640`, `batch=16`, `device=0`, `seed=42`, `patience=20`.
+- [x] **Task 1.3: ONNX Serialization**
+  - Export `format=onnx`, `simplify=True`, `opset=12` -> `public/models/best.onnx`.
+- [x] **Task 1.4: Dependencies**
+  - `requirements.txt` + README setup instructions.
+- [x] **Task 1.5: Validation metrics**
+  - Training uses Ultralytics val; `best.pt` saved under `runs/pose/earlobe/`.
+- [x] **Task 1.6: ONNX smoke test**
+  - `python/verify_onnx.py` — CPU inference + writes `docs/MODEL_IO.md`.
+- [x] **Task 1.7: Model I/O documentation**
+  - Confirm input name (typically `images`) and output shapes after export.
+
+---
+
+## Phase 2: Frontend Layout & Webcam Infrastructure
+- [x] **Task 2.0: Vite scaffold**
+  - `package.json`, `vite.config.js`, `src/`, `public/models/`, `public/assets/`.
+- [x] **Task 2.1: DOM Layout & Layers**
+  - `index.html` — stacked video (mirrored), debug canvas, Three.js canvas.
+- [x] **Task 2.2: Camera Core Stream**
+  - `src/camera.js` — `getUserMedia`, permission errors, lifecycle.
+- [x] **Task 2.3: Canvas/video sync & error UX**
+  - `syncCanvases` on `loadedmetadata`; status element for errors.
+- [x] **Task 2.4: Static assets**
+  - `public/models/best.onnx`, `public/assets/earring.glb` (optional placeholder sphere).
+
+---
+
+## Phase 3: ONNX Engine & Post-Processing Decoder
+- [x] **Task 3.0: ONNX I/O**
+  - Documented in `docs/MODEL_IO.md` (regenerate via `verify_onnx.py`).
+- [x] **Task 3.1: ONNX Core Engine Initialization**
+  - `src/onnx-engine.js` — WASM CDN paths; EP fallback webgpu -> webgl -> wasm.
+- [x] **Task 3.2: Frame Tensor Optimization**
+  - `src/letterbox.js` — letterbox to `[1, 3, 640, 640]`, reusable `Float32Array`.
+- [x] **Task 3.3: YOLOv8 Output Decoder**
+  - `src/decoder.js` — decode, NMS, earlobe keypoint, selection rule.
+- [x] **Task 3.4: Letterbox inverse map**
+  - `mapToSource` + `mapToScreen` (mirrored X) in `src/letterbox.js`.
+- [x] **Task 3.5: NMS + single-target selection**
+  - `src/decoder.js` + `config/tracking.json`.
+- [x] **Task 3.6: Async inference throttle**
+  - `src/inference-loop.js` — render every rAF; infer per `inferenceIntervalMs`.
+- [x] **Task 3.7: Debug overlay**
+  - `?debug=1` — `src/debug-overlay.js` draws box + keypoint.
+
+---
+
+## Phase 4: Three.js Rendering & 3D Spatial Pipeline
+- [x] **Task 4.0: MVP placement semantics**
+  - Screen-space orthographic attach at lobe; scale from bbox width (`src/placement.js`).
+- [x] **Task 4.1: Three.js Boilerplate**
+  - `src/three-scene.js` — Scene, OrthographicCamera, transparent renderer, lights.
+- [x] **Task 4.2: Asset Pipeline Setup**
+  - `GLTFLoader` for `public/assets/earring.glb`; hidden until confidence hysteresis on.
+- [x] **Task 4.3: Remapping & jitter filter**
+  - Letterbox -> screen pixels; **lerp** smoothing (`config/tracking.json`).
+- [x] **Task 4.4: Mesh pivot / hook offset**
+  - `hookOffset` in `src/three-scene.js` — calibrate per GLB.
+- [x] **Task 4.5: Confidence hysteresis**
+  - `showHysteresis.on` / `off` in `src/placement.js`.
+
+---
+
+## Phase 5: Integration & QA
+- [x] **Task 5.1: E2E checklist**
+  - `docs/QA_CHECKLIST.md`.
+- [x] **Task 5.2: README & repo hygiene**
+  - `README.md`, `.gitignore` (weights, venv, node_modules).
+
+---
+
+## Phase 6: Ops Notes
+- All-local inference (privacy).
+- Browser matrix: Chrome/Edge first.
+- Dev FPS log when `?debug=1`.
+
+---
+
+## Strict Guardrails & Engineering Directives
+1. **Performance:** Target >30 FPS; reuse pre-allocated TypedArrays; throttle ONNX in `inference-loop.js`.
+2. **Coordinate sync:** Video mirrored (`scaleX(-1)`); map X in `mapToScreen`.
+3. **WASM handling:** CDN fallback for `ort.env.wasm.wasmPaths` in `onnx-engine.js`.
+4. **Model format:** ONNX for weights; WASM is onnxruntime-web runtime only (see README).
+

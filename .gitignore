@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.runs/
+runs/
+*.pt
+*.onnx
+!public/models/.gitkeep
+.DS_Store
+.env
+.idea/
+.vscode/

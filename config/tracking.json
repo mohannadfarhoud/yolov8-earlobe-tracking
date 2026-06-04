@@ -1,0 +1,9 @@
+{
+  "earlobeKptIndex": 0,
+  "selectionRule": "highest_conf",
+  "boxConfThreshold": 0.5,
+  "kptConfThreshold": 0.5,
+  "showHysteresis": { "on": 0.55, "off": 0.45 },
+  "lerpFactor": 0.35,
+  "inferenceIntervalMs": 33
+}

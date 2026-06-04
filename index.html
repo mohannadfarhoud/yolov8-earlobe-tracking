@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Earlobe Try-On</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="stage" class="stage">
+        <video id="webcam" class="webcam" playsinline muted autoplay></video>
+        <canvas id="debug-canvas" class="overlay debug"></canvas>
+        <canvas id="three-canvas" class="overlay three"></canvas>
+      </div>
+      <div id="status" class="status" role="status"></div>
+      <p id="hint" class="hint">
+        Requires localhost or HTTPS for camera access. Place
+        <code>best.onnx</code> in <code>public/models/</code>.
+      </p>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
