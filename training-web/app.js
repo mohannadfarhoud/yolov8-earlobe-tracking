@@ -147,6 +147,40 @@
     return -1;
   }
 
+  function nextImageIndex(from) {
+    var n = annotateState.images.length;
+    if (n === 0) return 0;
+    return (from + 1) % n;
+  }
+
+  async function loadLabelsForImage(cur) {
+    try {
+      var r = await api('/api/annotate/label/' + cur.split + '/' + cur.stem + rootQuery());
+      annotateState.left = null;
+      annotateState.right = null;
+      if (r.ears) {
+        if (r.ears.left) {
+          annotateState.left = {
+            x: r.ears.left.kx * annotateState.naturalW,
+            y: r.ears.left.ky * annotateState.naturalH,
+          };
+        }
+        if (r.ears.right) {
+          annotateState.right = {
+            x: r.ears.right.kx * annotateState.naturalW,
+            y: r.ears.right.ky * annotateState.naturalH,
+          };
+        }
+      }
+      updateMarkers();
+      updateSaveButton();
+      updateClickInfo();
+      requestAnimationFrame(updateMarkers);
+    } catch (e) {
+      setLog('log-annotate', 'Could not load labels: ' + String(e), true);
+    }
+  }
+
   async function loadCurrentImage() {
     var imgs = annotateState.images;
     if (!imgs.length) {
@@ -164,7 +198,9 @@
       cur.split +
       '/' +
       encodeURIComponent(cur.filename) +
-      rootQuery();
+      rootQuery() +
+      '&_t=' +
+      Date.now();
     var imgEl = $('annotate-img');
     annotateState.left = null;
     annotateState.right = null;
@@ -174,30 +210,11 @@
     imgEl.onload = function () {
       annotateState.naturalW = imgEl.naturalWidth;
       annotateState.naturalH = imgEl.naturalHeight;
-      api('/api/annotate/label/' + cur.split + '/' + cur.stem + rootQuery())
-        .then(function (r) {
-          if (r.ears) {
-            if (r.ears.left) {
-              annotateState.left = {
-                x: r.ears.left.kx * annotateState.naturalW,
-                y: r.ears.left.ky * annotateState.naturalH,
-              };
-            }
-            if (r.ears.right) {
-              annotateState.right = {
-                x: r.ears.right.kx * annotateState.naturalW,
-                y: r.ears.right.ky * annotateState.naturalH,
-              };
-            }
-            updateMarkers();
-            updateSaveButton();
-            updateClickInfo();
-          }
-        })
-        .catch(function () {});
+      loadLabelsForImage(cur);
     };
     imgEl.src = url;
-    $('click-info').textContent = cur.filename + ' (' + (annotateState.index + 1) + '/' + imgs.length + ')';
+    $('click-info').textContent =
+      cur.filename + ' (' + (annotateState.index + 1) + '/' + imgs.length + ')' + (cur.annotated ? ' — edit' : '');
   }
 
   function setActiveSide(side) {
@@ -339,36 +356,57 @@
       }
     });
 
-    $('btn-save-anno').addEventListener('click', async function () {
-      if (!annotateState.left && !annotateState.right) return;
+    async function saveAnnotation(advance) {
+      if (!annotateState.left && !annotateState.right) {
+        setLog('log-annotate', 'Mark at least one ear (left or right) before saving.', true);
+        return;
+      }
+      if (!annotateState.naturalW || !annotateState.naturalH) {
+        setLog('log-annotate', 'Wait for the image to finish loading.', true);
+        return;
+      }
       var cur = annotateState.images[annotateState.index];
+      $('btn-save-anno').disabled = true;
+      $('btn-save-stay').disabled = true;
       try {
-        var body = {
-          root: datasetRoot(),
-          split: cur.split,
-          filename: cur.filename,
-          image_width: annotateState.naturalW,
-          image_height: annotateState.naturalH,
-          left: annotateState.left,
-          right: annotateState.right,
-        };
         var r = await api('/api/annotate/save', {
           method: 'POST',
-          body: JSON.stringify(body),
+          body: JSON.stringify({
+            root: datasetRoot(),
+            split: cur.split,
+            filename: cur.filename,
+            image_width: annotateState.naturalW,
+            image_height: annotateState.naturalH,
+            left: annotateState.left,
+            right: annotateState.right,
+          }),
         });
         updateStats(r.total, r.annotated);
         await refreshImageList();
-        var next = findNextUnannotated(annotateState.index + 1);
-        if (next >= 0) {
-          annotateState.index = next;
+        if (advance) {
+          var pending = findNextUnannotated(0);
+          annotateState.index = pending >= 0 ? pending : nextImageIndex(annotateState.index);
           await loadCurrentImage();
-          setLog('log-annotate', 'Saved. Next image.');
+          setLog('log-annotate', pending >= 0 ? 'Saved. Next unannotated.' : 'Saved. Next image.');
         } else {
-          setLog('log-annotate', 'All images annotated! Go to tab 2. Train.');
+          await loadLabelsForImage(cur);
+          renderImageList();
+          setLog('log-annotate', 'Saved changes to ' + cur.filename);
         }
       } catch (e) {
-        setLog('log-annotate', String(e), true);
+        setLog('log-annotate', 'Save failed: ' + String(e), true);
+      } finally {
+        updateSaveButton();
+        $('btn-save-stay').disabled = false;
       }
+    }
+
+    $('btn-save-anno').addEventListener('click', function () {
+      saveAnnotation(true);
+    });
+
+    $('btn-save-stay').addEventListener('click', function () {
+      saveAnnotation(false);
     });
 
     $('btn-skip-anno').addEventListener('click', async function () {
