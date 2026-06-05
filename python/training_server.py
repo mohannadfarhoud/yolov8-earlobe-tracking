@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
+from typing import Optional
 
 import yaml
 from annotate_utils import (
@@ -109,8 +110,8 @@ class SaveAnnotation(BaseModel):
     filename: str
     image_width: int
     image_height: int
-    left: EarPoint | None = None
-    right: EarPoint | None = None
+    left: Optional[EarPoint] = None
+    right: Optional[EarPoint] = None
 
 
 def resolve_root(path: str) -> Path:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import random
 import shutil
 from pathlib import Path
+from typing import Optional
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 DEFAULT_BOX_W = 0.18
@@ -90,8 +91,8 @@ def write_ear_labels(
     root: Path,
     split: str,
     stem: str,
-    left: dict | None,
-    right: dict | None,
+    left: Optional[dict],
+    right: Optional[dict],
     image_width: int,
     image_height: int,
 ) -> Path:
