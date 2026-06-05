@@ -95,24 +95,54 @@ npm install onnxruntime-web
 
 Or import from this repo if you use Vite/npm link.
 
-### API
+### API (safe — won't crash the tab)
 
 ```javascript
 import { createEarlobeTracker } from './earlobe-tracker.js';
 
 const tracker = await createEarlobeTracker({
   modelUrl: '/models/best.onnx',
-  mirrorX: true, // set false if video is not mirrored
+  mirrorX: true,
+  useGpu: false, // default; WebGPU can crash some GPUs
 });
 
-// On each frame (throttle ~30ms):
-const point = await tracker.detect(yourVideoElement);
-if (point) {
-  // point.x, point.y — use in your UI (CSS, canvas, etc.)
-  // point.confidence — gate visibility
-  // point.xRaw, point.yRaw — non-mirrored video pixels
-}
+// Use startLoop — one inference at a time, throttled (~30ms)
+tracker.startLoop(yourVideoElement, ({ left, right }) => {
+  if (left) { /* left.x, left.y, left.confidence */ }
+  if (right) { /* right.x, right.y, right.confidence */ }
+});
+
+// When leaving the page:
+tracker.dispose();
 ```
+
+**Do not** call `detect()` inside `requestAnimationFrame` without awaiting — overlapping ONNX runs can freeze or crash the browser.
+
+### Mobile phones
+
+Phones have much less RAM than a PC. The library auto-detects mobile and:
+
+- Limits camera to ~480p and 15 FPS
+- Runs inference ~5×/sec (not 30×/sec)
+- Uses WASM only (no WebGPU)
+- Pauses when the tab is hidden
+
+```javascript
+import { createEarlobeTracker, getMobileCameraConstraints } from './earlobe-tracker.js';
+
+const stream = await navigator.mediaDevices.getUserMedia(getMobileCameraConstraints());
+video.srcObject = stream;
+await video.play();
+
+const tracker = await createEarlobeTracker({ modelUrl: './models/best.onnx' });
+tracker.startLoop(video, onResult); // mobile-safe by default
+```
+
+Serve your page over **HTTPS** (required for camera on many phones). Close other tabs before loading — the ONNX model + WASM runtime need ~50–80 MB.
+
+### Standalone export (no npm)
+
+After **Export** in the training UI, open `export/web-library/README.txt`. Serve the folder with any static server and open `example.html` (includes ONNX Runtime CDN import map).
 
 ### Test demo in this repo
 

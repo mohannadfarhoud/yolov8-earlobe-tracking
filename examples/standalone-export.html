@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>Earlobe tracker</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: system-ui, sans-serif;
+        background: #111;
+        color: #eee;
+        text-align: center;
+        margin: 0;
+        padding: 1rem;
+      }
+      .wrap {
+        position: relative;
+        display: inline-block;
+        width: 100%;
+        max-width: 480px;
+      }
+      video {
+        width: 100%;
+        transform: scaleX(-1);
+        background: #000;
+      }
+      .dot {
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        margin: -6px 0 0 -6px;
+        border-radius: 50%;
+        display: none;
+        pointer-events: none;
+      }
+      .dot.left {
+        background: #48f;
+      }
+      .dot.right {
+        background: #f84;
+      }
+      #status {
+        margin-top: 1rem;
+        color: #aaa;
+        font-size: 0.9rem;
+        line-height: 1.4;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "onnxruntime-web": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0/dist/ort.min.mjs"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <h1>Earlobe tracker</h1>
+    <div class="wrap">
+      <video id="cam" playsinline muted autoplay></video>
+      <div id="dot-left" class="dot left"></div>
+      <div id="dot-right" class="dot right"></div>
+    </div>
+    <p id="status">Loading model…</p>
+    <script type="module">
+      import { createEarlobeTracker, getMobileCameraConstraints } from './src/earlobe-tracker.js';
+
+      const video = document.getElementById('cam');
+      const dotL = document.getElementById('dot-left');
+      const dotR = document.getElementById('dot-right');
+      const status = document.getElementById('status');
+
+      function show(dot, p, sx, sy) {
+        if (p && p.confidence > 0.5) {
+          dot.style.display = 'block';
+          dot.style.left = p.x * sx + 'px';
+          dot.style.top = p.y * sy + 'px';
+        } else {
+          dot.style.display = 'none';
+        }
+      }
+
+      try {
+        status.textContent = 'Starting camera…';
+        const stream = await navigator.mediaDevices.getUserMedia(getMobileCameraConstraints());
+        video.srcObject = stream;
+        await video.play();
+
+        status.textContent = 'Loading ONNX model (may take 10–30s on phone)…';
+        const tracker = await createEarlobeTracker({
+          modelUrl: './models/best.onnx',
+          mirrorX: true,
+        });
+        status.textContent = tracker.isMobile
+          ? 'Ready (mobile mode — ~5 FPS, low memory)'
+          : 'Ready';
+
+        tracker.startLoop(video, ({ left, right }) => {
+          const rect = video.getBoundingClientRect();
+          const sx = rect.width / video.videoWidth;
+          const sy = rect.height / video.videoHeight;
+          show(dotL, left, sx, sy);
+          show(dotR, right, sx, sy);
+          status.textContent =
+            [left && 'L ' + left.x.toFixed(0) + ',' + left.y.toFixed(0), right && 'R ' + right.x.toFixed(0) + ',' + right.y.toFixed(0)]
+              .filter(Boolean)
+              .join(' | ') || 'Point camera at your face';
+        });
+
+        window.addEventListener('pagehide', () => {
+          stream.getTracks().forEach((t) => t.stop());
+          tracker.dispose();
+        });
+      } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+        console.error(e);
+      }
+    </script>
+  </body>
+</html>

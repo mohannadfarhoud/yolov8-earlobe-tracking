@@ -177,7 +177,10 @@ def export_web_library(root_project: Path) -> dict:
         ("src/onnx-engine.js", "src/onnx-engine.js"),
         ("src/letterbox.js", "src/letterbox.js"),
         ("src/decoder.js", "src/decoder.js"),
+        ("src/tracking-defaults.js", "src/tracking-defaults.js"),
+        ("src/device.js", "src/device.js"),
         ("config/tracking.json", "config/tracking.json"),
+        ("examples/standalone-export.html", "example.html"),
     ]
     for src_rel, dest_rel in copies:
         src = root_project / src_rel
@@ -188,9 +191,22 @@ def export_web_library(root_project: Path) -> dict:
     readme.write_text(
         "Earlobe web library export\n"
         "==========================\n\n"
-        "Model detects left_earlobe (class 0) and right_earlobe (class 1).\n\n"
-        "  const result = await tracker.detect(video);\n"
-        "  result.left / result.right — each { x, y, confidence } or null\n",
+        "IMPORTANT — avoid browser crashes (especially on phones):\n"
+        "  1. Use tracker.startLoop(video, callback) — NOT detect() in a tight loop\n"
+        "  2. On mobile the library auto-slows to ~5 FPS and downscales camera frames\n"
+        "  3. Use getMobileCameraConstraints() for getUserMedia (see example.html)\n"
+        "  4. Serve over https or http://localhost — not file://\n"
+        "  5. npm install onnxruntime-web OR use the import map in example.html\n"
+        "  6. iPhone: use Safari; close other tabs before loading (model + WASM need RAM)\n\n"
+        "Quick test:\n"
+        "  cd web-library\n"
+        "  python -m http.server 8080\n"
+        "  Open http://localhost:8080/example.html\n\n"
+        "API:\n"
+        "  const tracker = await createEarlobeTracker({ modelUrl: './models/best.onnx' });\n"
+        "  tracker.startLoop(video, ({ left, right }) => { ... });\n"
+        "  // left/right: { x, y, confidence } or null\n"
+        "  tracker.dispose(); // when done\n",
         encoding="utf-8",
     )
     return {"export_dir": str(export_dir)}

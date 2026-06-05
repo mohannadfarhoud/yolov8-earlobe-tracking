@@ -18,6 +18,7 @@ const stage = document.getElementById('stage');
 const statusEl = document.getElementById('status');
 
 const offscreen = document.createElement('canvas');
+const captureCanvas = document.createElement('canvas');
 const tensorBuf = new Float32Array(1 * 3 * 640 * 640);
 const debug = isDebugEnabled();
 const placement = new PlacementState(trackingCfg);
@@ -104,7 +105,7 @@ async function runLoop() {
     },
     onInfer: async () => {
       if (!session || video.readyState < 2) return;
-      const lb = letterboxToTensor(video, offscreen, tensorBuf);
+      const lb = letterboxToTensor(video, offscreen, captureCanvas, tensorBuf);
       letterboxMeta = lb;
       const { data, dims } = await runInference(session, inputName, lb.tensor);
       const { detection, earlobe } = decodePoseOutput(data, dims, {

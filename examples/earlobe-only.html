@@ -46,17 +46,14 @@
     </div>
     <p id="status">Loading model…</p>
     <script type="module">
-      import { createEarlobeTracker } from '../src/earlobe-tracker.js';
+      import { createEarlobeTracker, getMobileCameraConstraints } from '../src/earlobe-tracker.js';
 
       const video = document.getElementById('cam');
       const dotL = document.getElementById('dot-left');
       const dotR = document.getElementById('dot-right');
       const status = document.getElementById('status');
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user' },
-        audio: false,
-      });
+      const stream = await navigator.mediaDevices.getUserMedia(getMobileCameraConstraints());
       video.srcObject = stream;
       await video.play();
 
@@ -66,11 +63,11 @@
       });
       status.textContent = 'Model ready';
 
-      async function loop() {
-        const { left, right } = await tracker.detect(video);
-        const rect = video.getBoundingClientRect();
-        const sx = rect.width / video.videoWidth;
-        const sy = rect.height / video.videoHeight;
+      const rect = () => video.getBoundingClientRect();
+      tracker.startLoop(video, ({ left, right }) => {
+        const r = rect();
+        const sx = r.width / video.videoWidth;
+        const sy = r.height / video.videoHeight;
         function show(dot, p) {
           if (p && p.confidence > 0.5) {
             dot.style.display = 'block';
@@ -86,9 +83,7 @@
         ]
           .filter(Boolean)
           .join(' | ') || 'No earlobe detected';
-        setTimeout(loop, 33);
-      }
-      loop();
+      });
     </script>
   </body>
 </html>

@@ -21,18 +21,21 @@ function iou(a, b) {
  * @param {number} numKpts
  * @param {number} confThresh
  */
-function decodeCandidates(output, numClasses, numKpts, confThresh) {
-  const channels = output.length;
-  const numAnchors = output[0].length;
+function at(output, c, a, flat) {
+  if (flat) return output[c * flat.anchors + a];
+  return output[c][a];
+}
+
+function decodeCandidates(output, numClasses, numKpts, confThresh, flat) {
+  const numAnchors = flat ? flat.anchors : output[0].length;
   const candidates = [];
-  const kptDims = numKpts * 3;
   const kptStart = 4 + numClasses;
 
   for (let a = 0; a < numAnchors; a++) {
     let bestCls = 0;
     let bestScore = 0;
     for (let c = 0; c < numClasses; c++) {
-      const s = output[4 + c][a];
+      const s = at(output, 4 + c, a, flat);
       if (s > bestScore) {
         bestScore = s;
         bestCls = c;
@@ -40,10 +43,10 @@ function decodeCandidates(output, numClasses, numKpts, confThresh) {
     }
     if (bestScore < confThresh) continue;
 
-    const cx = output[0][a];
-    const cy = output[1][a];
-    const w = output[2][a];
-    const h = output[3][a];
+    const cx = at(output, 0, a, flat);
+    const cy = at(output, 1, a, flat);
+    const w = at(output, 2, a, flat);
+    const h = at(output, 3, a, flat);
     const x1 = cx - w / 2;
     const y1 = cy - h / 2;
     const x2 = cx + w / 2;
@@ -53,9 +56,9 @@ function decodeCandidates(output, numClasses, numKpts, confThresh) {
     for (let k = 0; k < numKpts; k++) {
       const base = kptStart + k * 3;
       kpts.push({
-        x: output[base][a],
-        y: output[base + 1][a],
-        conf: output[base + 2][a],
+        x: at(output, base, a, flat),
+        y: at(output, base + 1, a, flat),
+        conf: at(output, base + 2, a, flat),
       });
     }
 
@@ -182,17 +185,15 @@ export function decodeBothEars(raw, shape, cfg) {
   if (shape.length !== 3) return { left: null, right: null };
   channels = shape[1];
   anchors = shape[2];
+  if (channels < 1 || anchors < 1 || channels > 512 || anchors > 200000) {
+    console.warn('Unexpected ONNX output shape', shape);
+    return { left: null, right: null };
+  }
 
   const numClasses = cfg.numClasses ?? 2;
   const numKpts = cfg.numKpts ?? 1;
-  const output = [];
-  for (let c = 0; c < channels; c++) {
-    const row = new Float32Array(anchors);
-    for (let a = 0; a < anchors; a++) row[a] = raw[c * anchors + a];
-    output.push(Array.from(row));
-  }
-
-  let candidates = decodeCandidates(output, numClasses, numKpts, cfg.boxConfThreshold);
+  const flat = { anchors };
+  let candidates = decodeCandidates(raw, numClasses, numKpts, cfg.boxConfThreshold, flat);
   const leftId = cfg.leftClassId ?? 0;
   const rightId = cfg.rightClassId ?? 1;
   const leftNms = nms(candidates.filter((d) => d.classId === leftId), cfg.nmsIou ?? 0.45);
