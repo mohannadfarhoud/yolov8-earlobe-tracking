@@ -1,4 +1,7 @@
 {
+  "leftClassId": 0,
+  "rightClassId": 1,
+  "numClasses": 2,
   "earlobeKptIndex": 0,
   "selectionRule": "highest_conf",
   "boxConfThreshold": 0.5,

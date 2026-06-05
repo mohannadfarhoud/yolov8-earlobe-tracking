@@ -1,39 +1,17 @@
 /**
- * Browser library: load trained best.onnx and return earlobe (x, y) from a video frame.
+ * Browser library: detect left and/or right earlobe from a trained 2-class pose model.
  *
  * @example
  * const tracker = await createEarlobeTracker({ modelUrl: '/models/best.onnx' });
- * const point = await tracker.detect(videoElement);
- * if (point) console.log(point.x, point.y, point.confidence);
+ * const { left, right } = await tracker.detect(videoElement);
  */
 
 import defaultCfg from '../config/tracking.json';
-import { decodePoseOutput } from './decoder.js';
+import { decodeBothEars } from './decoder.js';
 import { letterboxToTensor, mapToScreen, mapToSource } from './letterbox.js';
 import { createSession, runInference } from './onnx-engine.js';
 
 const IMGSZ = 640;
-
-/**
- * @typedef {Object} EarlobePoint
- * @property {number} x - Pixel X (mirrored when mirrorX is true)
- * @property {number} y - Pixel Y
- * @property {number} confidence
- * @property {number} xRaw - Video pixel X (not mirrored)
- * @property {number} yRaw - Video pixel Y
- * @property {{ x1: number, y1: number, x2: number, y2: number }} [box]
- */
-
-/**
- * @param {import('./letterbox.js').LetterboxResult} lb
- * @param {number} x640
- * @param {number} y640
- * @param {boolean} mirrorX
- */
-function toDisplayCoords(lb, x640, y640, mirrorX) {
-  const src = mapToSource(x640, y640, lb);
-  return mirrorX ? mapToScreen(src.x, src.y, lb) : { x: src.x, y: src.y, xRaw: src.x, yRaw: src.y };
-}
 
 function letterboxFromCanvas(canvas, offscreen, tensorBuf) {
   const srcW = canvas.width;
@@ -66,17 +44,27 @@ function letterboxFromCanvas(canvas, offscreen, tensorBuf) {
   return { tensor: out, gain, padX, padY, srcW, srcH };
 }
 
-/**
- * @param {Object} options
- * @param {string} options.modelUrl
- * @param {boolean} [options.mirrorX=true]
- */
+function mapEar(ear, lb, mirrorX) {
+  if (!ear) return null;
+  const src = mapToSource(ear.x, ear.y, lb);
+  const display = mirrorX ? mapToScreen(src.x, src.y, lb) : { x: src.x, y: src.y };
+  return {
+    x: display.x,
+    y: display.y,
+    confidence: ear.conf,
+    xRaw: src.x,
+    yRaw: src.y,
+  };
+}
+
 export async function createEarlobeTracker(options) {
   const cfg = {
     boxConfThreshold: options.boxConfThreshold ?? defaultCfg.boxConfThreshold,
     kptConfThreshold: options.kptConfThreshold ?? defaultCfg.kptConfThreshold,
     earlobeKptIndex: options.earlobeKptIndex ?? defaultCfg.earlobeKptIndex,
-    selectionRule: options.selectionRule ?? defaultCfg.selectionRule,
+    leftClassId: options.leftClassId ?? defaultCfg.leftClassId ?? 0,
+    rightClassId: options.rightClassId ?? defaultCfg.rightClassId ?? 1,
+    numClasses: options.numClasses ?? defaultCfg.numClasses ?? 2,
   };
   const mirrorX = options.mirrorX !== false;
 
@@ -84,50 +72,33 @@ export async function createEarlobeTracker(options) {
   const offscreen = document.createElement('canvas');
   const tensorBuf = new Float32Array(1 * 3 * 640 * 640);
 
-  /**
-   * @param {HTMLVideoElement | HTMLCanvasElement} frameSource
-   * @returns {Promise<EarlobePoint | null>}
-   */
   async function detect(frameSource) {
     let lb;
     if (frameSource instanceof HTMLVideoElement) {
-      if (!frameSource.videoWidth) return null;
+      if (!frameSource.videoWidth) return { left: null, right: null };
       lb = letterboxToTensor(frameSource, offscreen, tensorBuf);
     } else if (frameSource instanceof HTMLCanvasElement) {
-      if (!frameSource.width) return null;
+      if (!frameSource.width) return { left: null, right: null };
       lb = letterboxFromCanvas(frameSource, offscreen, tensorBuf);
     } else {
       throw new Error('detect() requires HTMLVideoElement or HTMLCanvasElement');
     }
 
     const { data, dims } = await runInference(session, inputName, lb.tensor);
-    const { detection, earlobe } = decodePoseOutput(data, dims, cfg);
-    if (!earlobe) return null;
-
-    const src = mapToSource(earlobe.x, earlobe.y, lb);
-    const display = mirrorX ? mapToScreen(src.x, src.y, lb) : { x: src.x, y: src.y };
-
-    /** @type {EarlobePoint} */
-    const point = {
-      x: display.x,
-      y: display.y,
-      confidence: earlobe.conf,
-      xRaw: src.x,
-      yRaw: src.y,
+    const ears = decodeBothEars(data, dims, cfg);
+    return {
+      left: mapEar(ears.left, lb, mirrorX),
+      right: mapEar(ears.right, lb, mirrorX),
     };
-
-    if (detection) {
-      const tlSrc = mapToSource(detection.x1, detection.y1, lb);
-      const brSrc = mapToSource(detection.x2, detection.y2, lb);
-      const tl = mirrorX ? mapToScreen(tlSrc.x, tlSrc.y, lb) : tlSrc;
-      const br = mirrorX ? mapToScreen(brSrc.x, brSrc.y, lb) : brSrc;
-      point.box = { x1: tl.x, y1: tl.y, x2: br.x, y2: br.y };
-    }
-
-    return point;
   }
 
-  return { detect, dispose() {} };
+  /** @param {'left'|'right'} side */
+  async function detectSide(frameSource, side) {
+    const r = await detect(frameSource);
+    return side === 'left' ? r.left : r.right;
+  }
+
+  return { detect, detectSide, dispose() {} };
 }
 
 export default createEarlobeTracker;

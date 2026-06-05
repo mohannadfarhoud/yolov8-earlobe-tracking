@@ -1,4 +1,4 @@
-"""Helpers for web UI image upload and YOLO pose earlobe labels."""
+"""Helpers for web UI image upload and YOLO pose earlobe labels (left + right classes)."""
 
 from __future__ import annotations
 
@@ -7,15 +7,36 @@ import shutil
 from pathlib import Path
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
-# Default normalized box size around earlobe click
 DEFAULT_BOX_W = 0.18
 DEFAULT_BOX_H = 0.22
+
+CLASS_LEFT = 0
+CLASS_RIGHT = 1
 
 
 def ensure_dataset_layout(root: Path) -> None:
     for split in ("train", "val"):
         (root / "images" / split).mkdir(parents=True, exist_ok=True)
         (root / "labels" / split).mkdir(parents=True, exist_ok=True)
+
+
+def dataset_yaml_config(root: Path) -> dict:
+    return {
+        "path": str(root).replace("\\", "/"),
+        "train": "images/train",
+        "val": "images/val",
+        "nc": 2,
+        "names": {0: "left_earlobe", 1: "right_earlobe"},
+        "kpt_shape": [1, 3],
+    }
+
+
+def _format_line(class_id: int, kpt_x: float, kpt_y: float, box_w: float, box_h: float) -> str:
+    cx = max(0.0, min(1.0, kpt_x))
+    cy = max(0.0, min(1.0, kpt_y))
+    w = max(0.02, min(1.0, box_w))
+    h = max(0.02, min(1.0, box_h))
+    return f"{class_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f} {cx:.6f} {cy:.6f} 2"
 
 
 def list_images(root: Path) -> list[dict]:
@@ -29,56 +50,88 @@ def list_images(root: Path) -> list[dict]:
             if img.suffix.lower() not in IMAGE_EXTS:
                 continue
             label = root / "labels" / split / f"{img.stem}.txt"
+            ears = read_ear_labels(root, split, img.stem)
+            has_label = ears["left"] is not None or ears["right"] is not None
             items.append(
                 {
                     "split": split,
                     "filename": img.name,
                     "stem": img.stem,
-                    "annotated": label.is_file() and label.stat().st_size > 0,
+                    "annotated": has_label,
+                    "has_left": ears["left"] is not None,
+                    "has_right": ears["right"] is not None,
                     "path": str(img),
                 }
             )
     return items
 
 
-def write_label(
+def read_ear_labels(root: Path, split: str, stem: str) -> dict:
+    """Return normalized keypoints for left (class 0) and right (class 1)."""
+    label_path = root / "labels" / split / f"{stem}.txt"
+    result = {"left": None, "right": None}
+    if not label_path.is_file():
+        return result
+    for line in label_path.read_text(encoding="utf-8").splitlines():
+        parts = line.strip().split()
+        if len(parts) < 8:
+            continue
+        cls = int(float(parts[0]))
+        kx, ky = float(parts[5]), float(parts[6])
+        entry = {"kx": kx, "ky": ky}
+        if cls == CLASS_LEFT:
+            result["left"] = entry
+        elif cls == CLASS_RIGHT:
+            result["right"] = entry
+    return result
+
+
+def write_ear_labels(
     root: Path,
     split: str,
     stem: str,
-    kpt_x: float,
-    kpt_y: float,
-    box_w: float = DEFAULT_BOX_W,
-    box_h: float = DEFAULT_BOX_H,
+    left: dict | None,
+    right: dict | None,
+    image_width: int,
+    image_height: int,
 ) -> Path:
-    """Write YOLO pose line: class cx cy w h kx ky visibility."""
-    cx = max(0.0, min(1.0, kpt_x))
-    cy = max(0.0, min(1.0, kpt_y))
-    w = max(0.02, min(1.0, box_w))
-    h = max(0.02, min(1.0, box_h))
-    line = f"0 {cx:.6f} {cy:.6f} {w:.6f} {h:.6f} {cx:.6f} {cy:.6f} 2\n"
+    """
+    left/right: {x, y} in pixels or None if not visible in this photo.
+    """
+    if image_width < 1 or image_height < 1:
+        raise ValueError("invalid image dimensions")
+    if left is None and right is None:
+        raise ValueError("mark at least one earlobe (left or right)")
+
+    lines: list[str] = []
+    if left is not None:
+        lines.append(
+            _format_line(
+                CLASS_LEFT,
+                left["x"] / image_width,
+                left["y"] / image_height,
+                DEFAULT_BOX_W,
+                DEFAULT_BOX_H,
+            )
+        )
+    if right is not None:
+        lines.append(
+            _format_line(
+                CLASS_RIGHT,
+                right["x"] / image_width,
+                right["y"] / image_height,
+                DEFAULT_BOX_W,
+                DEFAULT_BOX_H,
+            )
+        )
+
     label_path = root / "labels" / split / f"{stem}.txt"
     label_path.parent.mkdir(parents=True, exist_ok=True)
-    label_path.write_text(line, encoding="utf-8")
+    label_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return label_path
 
 
-def read_label(root: Path, split: str, stem: str) -> dict | None:
-    label_path = root / "labels" / split / f"{stem}.txt"
-    if not label_path.is_file():
-        return None
-    parts = label_path.read_text(encoding="utf-8").strip().split()
-    if len(parts) < 8:
-        return None
-    return {
-        "kx": float(parts[5]),
-        "ky": float(parts[6]),
-        "cx": float(parts[1]),
-        "cy": float(parts[2]),
-    }
-
-
 def split_train_to_val(root: Path, val_ratio: float = 0.15, seed: int = 42) -> dict:
-    """Move a fraction of annotated train images (and labels) to val."""
     train_img = root / "images" / "train"
     annotated = [
         p
@@ -106,7 +159,6 @@ def split_train_to_val(root: Path, val_ratio: float = 0.15, seed: int = 42) -> d
 
 
 def export_web_library(root_project: Path) -> dict:
-    """Copy ONNX + JS library files into export/web-library/."""
     onnx_src = root_project / "public" / "models" / "best.onnx"
     if not onnx_src.is_file():
         raise FileNotFoundError("best.onnx not found — train first")
@@ -135,14 +187,9 @@ def export_web_library(root_project: Path) -> dict:
     readme.write_text(
         "Earlobe web library export\n"
         "==========================\n\n"
-        "Copy this folder into your website.\n\n"
-        "  npm install onnxruntime-web\n\n"
-        "Usage:\n"
-        "  import { createEarlobeTracker } from './src/earlobe-tracker.js';\n"
-        "  const tracker = await createEarlobeTracker({\n"
-        "    modelUrl: './models/best.onnx',\n"
-        "  });\n"
-        "  const point = await tracker.detect(videoElement);\n",
+        "Model detects left_earlobe (class 0) and right_earlobe (class 1).\n\n"
+        "  const result = await tracker.detect(video);\n"
+        "  result.left / result.right — each { x, y, confidence } or null\n",
         encoding="utf-8",
     )
     return {"export_dir": str(export_dir)}

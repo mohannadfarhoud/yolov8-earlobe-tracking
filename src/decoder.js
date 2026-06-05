@@ -165,3 +165,47 @@ export function decodePoseOutput(raw, shape, cfg) {
   }
   return { detection: det, earlobe: { x: kpt.x, y: kpt.y, conf: kpt.conf } };
 }
+
+function bestForClass(detections, classId) {
+  const subset = detections.filter((d) => d.classId === classId);
+  if (!subset.length) return null;
+  return subset.reduce((a, b) => (a.score >= b.score ? a : b));
+}
+
+/**
+ * Decode left and right earlobe detections (class 0 / class 1).
+ * @returns {{ left: { x, y, conf, detection } | null, right: { x, y, conf, detection } | null }}
+ */
+export function decodeBothEars(raw, shape, cfg) {
+  let channels;
+  let anchors;
+  if (shape.length !== 3) return { left: null, right: null };
+  channels = shape[1];
+  anchors = shape[2];
+
+  const numClasses = cfg.numClasses ?? 2;
+  const numKpts = cfg.numKpts ?? 1;
+  const output = [];
+  for (let c = 0; c < channels; c++) {
+    const row = new Float32Array(anchors);
+    for (let a = 0; a < anchors; a++) row[a] = raw[c * anchors + a];
+    output.push(Array.from(row));
+  }
+
+  let candidates = decodeCandidates(output, numClasses, numKpts, cfg.boxConfThreshold);
+  const leftId = cfg.leftClassId ?? 0;
+  const rightId = cfg.rightClassId ?? 1;
+  const leftNms = nms(candidates.filter((d) => d.classId === leftId), cfg.nmsIou ?? 0.45);
+  const rightNms = nms(candidates.filter((d) => d.classId === rightId), cfg.nmsIou ?? 0.45);
+  const leftDet = bestForClass(leftNms, leftId);
+  const rightDet = bestForClass(rightNms, rightId);
+
+  function toEar(det) {
+    if (!det) return null;
+    const kpt = det.kpts[cfg.earlobeKptIndex ?? 0];
+    if (!kpt || kpt.conf < cfg.kptConfThreshold) return null;
+    return { x: kpt.x, y: kpt.y, conf: kpt.conf, detection: det };
+  }
+
+  return { left: toEar(leftDet), right: toEar(rightDet) };
+}

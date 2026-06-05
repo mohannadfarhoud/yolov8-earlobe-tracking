@@ -27,7 +27,8 @@
           <li>Enter dataset folder path below</li>
           <li>Click <strong>Setup folder</strong> (once)</li>
           <li>Click <strong>Upload images</strong> and choose face photos</li>
-          <li>Click each earlobe → <strong>Save &amp; next</strong></li>
+          <li>Choose <strong>Left ear</strong> or <strong>Right ear</strong>, click on image (one or both per photo)</li>
+          <li><strong>Save &amp; next</strong></li>
         </ol>
         <label>
           Dataset folder
@@ -50,10 +51,17 @@
         <div class="annotate-layout">
           <ul id="image-list" class="image-list"></ul>
           <div class="annotate-stage">
-            <p class="hint">Click on the earlobe in the image. Then Save &amp; next.</p>
+            <p class="hint">Pick which ear you are marking, then click on the earlobe. Mark one or both ears per photo.</p>
+            <div class="row ear-mode">
+              <button type="button" id="btn-mode-left" class="mode-btn active" data-side="left">Left ear</button>
+              <button type="button" id="btn-mode-right" class="mode-btn" data-side="right">Right ear</button>
+              <button type="button" id="btn-clear-left">Clear left</button>
+              <button type="button" id="btn-clear-right">Clear right</button>
+            </div>
             <div id="canvas-wrap" class="canvas-wrap">
               <img id="annotate-img" alt="Select an image" />
-              <div id="annotate-marker" class="marker hidden"></div>
+              <div id="marker-left" class="marker marker-left hidden"></div>
+              <div id="marker-right" class="marker marker-right hidden"></div>
             </div>
             <p id="click-info" class="hint"></p>
             <div class="row">
@@ -106,6 +114,6 @@
       </section>
     </main>
 
-    <script defer src="/assets/app.js?v=4"></script>
+    <script defer src="/assets/app.js?v=5"></script>
   </body>
 </html>

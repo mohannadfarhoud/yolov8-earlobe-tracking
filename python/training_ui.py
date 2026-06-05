@@ -48,8 +48,8 @@ def write_data_yaml(dataset_root: str) -> str:
         "path": str(root).replace("\\", "/"),
         "train": "images/train",
         "val": "images/val",
-        "nc": 1,
-        "names": {0: "earlobe"},
+        "nc": 2,
+        "names": {0: "left_earlobe", 1: "right_earlobe"},
         "kpt_shape": [1, 3],
     }
     with DATA_YAML.open("w", encoding="utf-8") as f:

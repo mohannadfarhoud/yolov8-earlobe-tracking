@@ -2,7 +2,8 @@
 path: C:/earlobe-tracking/earlobe
 train: images/train
 val: images/val
-nc: 1
+nc: 2
 names:
-  0: earlobe
+  0: left_earlobe
+  1: right_earlobe
 kpt_shape: [1, 3]

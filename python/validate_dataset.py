@@ -170,8 +170,9 @@ def validate(data_yaml: Path) -> int:
             print(f"    ... and {len(errs) - 10} more label format errors")
             exit_code = 1
 
-    print("\nEarlobe keypoint index: 0 (config/tracking.json)")
-    print("Selection rule: highest_conf (config/tracking.json)")
+    if cfg.get("nc") != 2:
+        print(f"WARN: nc={cfg.get('nc')} — expected nc=2 (left_earlobe, right_earlobe)")
+    print("\nClasses: 0=left_earlobe, 1=right_earlobe (one or two lines per image)")
 
     if exit_code != 0:
         scan_for_assets(root)

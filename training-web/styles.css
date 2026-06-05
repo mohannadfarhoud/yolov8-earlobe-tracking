@@ -170,6 +170,25 @@ main {
   display: none;
 }
 
+.marker-left {
+  background: #44aaff;
+  box-shadow: 0 0 6px #48f;
+}
+
+.marker-right {
+  background: #ff8844;
+  box-shadow: 0 0 6px #f84;
+}
+
+.ear-mode .mode-btn.active {
+  background: #3b6fc4;
+  border-color: #6af;
+}
+
+.mode-btn {
+  min-width: 6rem;
+}
+
 .log.short {
   min-height: 4rem;
   max-height: 8rem;

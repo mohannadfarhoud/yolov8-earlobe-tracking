@@ -3,11 +3,11 @@
   var annotateState = {
     images: [],
     index: 0,
-    clickX: 0,
-    clickY: 0,
     naturalW: 0,
     naturalH: 0,
-    hasClick: false,
+    activeSide: 'left',
+    left: null,
+    right: null,
   };
 
   function $(id) {
@@ -112,7 +112,10 @@
     list.innerHTML = '';
     annotateState.images.forEach(function (img, i) {
       var li = document.createElement('li');
-      li.textContent = (img.annotated ? '✓ ' : '○ ') + img.filename;
+      var tags = '';
+      if (img.has_left) tags += ' L';
+      if (img.has_right) tags += ' R';
+      li.textContent = (img.annotated ? '✓' : '○') + tags + ' ' + img.filename;
       li.className = i === annotateState.index ? 'active' : '';
       if (!img.annotated) li.classList.add('pending');
       li.addEventListener('click', function () {
@@ -163,49 +166,87 @@
       encodeURIComponent(cur.filename) +
       rootQuery();
     var imgEl = $('annotate-img');
-    annotateState.hasClick = false;
-    $('btn-save-anno').disabled = true;
-    $('annotate-marker').classList.add('hidden');
+    annotateState.left = null;
+    annotateState.right = null;
+    updateMarkers();
+    updateSaveButton();
 
     imgEl.onload = function () {
       annotateState.naturalW = imgEl.naturalWidth;
       annotateState.naturalH = imgEl.naturalHeight;
-      try {
-        api('/api/annotate/label/' + cur.split + '/' + cur.stem + rootQuery()).then(function (r) {
-          if (r.label) {
-            placeMarker(r.label.kx * annotateState.naturalW, r.label.ky * annotateState.naturalH);
+      api('/api/annotate/label/' + cur.split + '/' + cur.stem + rootQuery())
+        .then(function (r) {
+          if (r.ears) {
+            if (r.ears.left) {
+              annotateState.left = {
+                x: r.ears.left.kx * annotateState.naturalW,
+                y: r.ears.left.ky * annotateState.naturalH,
+              };
+            }
+            if (r.ears.right) {
+              annotateState.right = {
+                x: r.ears.right.kx * annotateState.naturalW,
+                y: r.ears.right.ky * annotateState.naturalH,
+              };
+            }
+            updateMarkers();
+            updateSaveButton();
+            updateClickInfo();
           }
-        });
-      } catch (_) {}
+        })
+        .catch(function () {});
     };
     imgEl.src = url;
     $('click-info').textContent = cur.filename + ' (' + (annotateState.index + 1) + '/' + imgs.length + ')';
   }
 
-  function placeMarker(px, py) {
+  function setActiveSide(side) {
+    annotateState.activeSide = side;
+    document.querySelectorAll('.mode-btn').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.side === side);
+    });
+    updateClickInfo();
+  }
+
+  function updateSaveButton() {
+    $('btn-save-anno').disabled = !(annotateState.left || annotateState.right);
+  }
+
+  function updateClickInfo() {
+    var parts = [];
+    if (annotateState.left) parts.push('L:' + Math.round(annotateState.left.x) + ',' + Math.round(annotateState.left.y));
+    if (annotateState.right) parts.push('R:' + Math.round(annotateState.right.x) + ',' + Math.round(annotateState.right.y));
+    var mode = annotateState.activeSide === 'left' ? 'Left ear' : 'Right ear';
+    $('click-info').textContent =
+      mode + ' — click earlobe' + (parts.length ? ' | ' + parts.join(' | ') : ' | (none marked yet)');
+  }
+
+  function updateMarkers() {
     var imgEl = $('annotate-img');
-    var wrap = $('canvas-wrap');
-    if (!imgEl.clientWidth) return;
+    if (!imgEl.clientWidth || !annotateState.naturalW) return;
     var scaleX = imgEl.clientWidth / annotateState.naturalW;
     var scaleY = imgEl.clientHeight / annotateState.naturalH;
-    annotateState.clickX = px;
-    annotateState.clickY = py;
-    annotateState.hasClick = true;
-    $('btn-save-anno').disabled = false;
-    var marker = $('annotate-marker');
-    marker.classList.remove('hidden');
-    marker.style.left = px * scaleX - 6 + 'px';
-    marker.style.top = py * scaleY - 6 + 'px';
-    $('click-info').textContent =
-      'Earlobe: ' +
-      Math.round(px) +
-      ', ' +
-      Math.round(py) +
-      ' (of ' +
-      annotateState.naturalW +
-      '×' +
-      annotateState.naturalH +
-      ')';
+    function show(side, point, elId) {
+      var el = $(elId);
+      if (!point) {
+        el.classList.add('hidden');
+        return;
+      }
+      el.classList.remove('hidden');
+      el.style.left = point.x * scaleX - 6 + 'px';
+      el.style.top = point.y * scaleY - 6 + 'px';
+    }
+    show('left', annotateState.left, 'marker-left');
+    show('right', annotateState.right, 'marker-right');
+  }
+
+  function placeMarkerForSide(side, px, py) {
+    var pt = { x: px, y: py };
+    if (side === 'left') annotateState.left = pt;
+    else annotateState.right = pt;
+    updateMarkers();
+    updateSaveButton();
+    updateClickInfo();
   }
 
   function initAnnotate() {
@@ -216,7 +257,26 @@
       var rect = imgEl.getBoundingClientRect();
       var x = ((e.clientX - rect.left) / rect.width) * annotateState.naturalW;
       var y = ((e.clientY - rect.top) / rect.height) * annotateState.naturalH;
-      placeMarker(x, y);
+      placeMarkerForSide(annotateState.activeSide, x, y);
+    });
+
+    $('btn-mode-left').addEventListener('click', function () {
+      setActiveSide('left');
+    });
+    $('btn-mode-right').addEventListener('click', function () {
+      setActiveSide('right');
+    });
+    $('btn-clear-left').addEventListener('click', function () {
+      annotateState.left = null;
+      updateMarkers();
+      updateSaveButton();
+      updateClickInfo();
+    });
+    $('btn-clear-right').addEventListener('click', function () {
+      annotateState.right = null;
+      updateMarkers();
+      updateSaveButton();
+      updateClickInfo();
     });
 
     var pathInput = $('dataset-root');
@@ -280,20 +340,21 @@
     });
 
     $('btn-save-anno').addEventListener('click', async function () {
-      if (!annotateState.hasClick) return;
+      if (!annotateState.left && !annotateState.right) return;
       var cur = annotateState.images[annotateState.index];
       try {
+        var body = {
+          root: datasetRoot(),
+          split: cur.split,
+          filename: cur.filename,
+          image_width: annotateState.naturalW,
+          image_height: annotateState.naturalH,
+          left: annotateState.left,
+          right: annotateState.right,
+        };
         var r = await api('/api/annotate/save', {
           method: 'POST',
-          body: JSON.stringify({
-            root: datasetRoot(),
-            split: cur.split,
-            filename: cur.filename,
-            x: annotateState.clickX,
-            y: annotateState.clickY,
-            image_width: annotateState.naturalW,
-            image_height: annotateState.naturalH,
-          }),
+          body: JSON.stringify(body),
         });
         updateStats(r.total, r.annotated);
         await refreshImageList();

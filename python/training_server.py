@@ -16,12 +16,13 @@ from pathlib import Path
 
 import yaml
 from annotate_utils import (
+    dataset_yaml_config,
     ensure_dataset_layout,
     export_web_library,
     list_images,
-    read_label,
+    read_ear_labels,
     split_train_to_val,
-    write_label,
+    write_ear_labels,
 )
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -97,14 +98,19 @@ class TrainParams(BaseModel):
     patience: int = 20
 
 
+class EarPoint(BaseModel):
+    x: float
+    y: float
+
+
 class SaveAnnotation(BaseModel):
     root: str
     split: str = "train"
     filename: str
-    x: float
-    y: float
     image_width: int
     image_height: int
+    left: EarPoint | None = None
+    right: EarPoint | None = None
 
 
 def resolve_root(path: str) -> Path:
@@ -126,14 +132,7 @@ def safe_image_path(root: Path, split: str, filename: str) -> Path:
 
 
 def save_data_yaml_for_root(root: Path) -> None:
-    cfg = {
-        "path": str(root).replace("\\", "/"),
-        "train": "images/train",
-        "val": "images/val",
-        "nc": 1,
-        "names": {0: "earlobe"},
-        "kpt_shape": [1, 3],
-    }
+    cfg = dataset_yaml_config(root)
     with DATA_YAML.open("w", encoding="utf-8") as f:
         yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
 
@@ -269,8 +268,8 @@ def api_annotate_image(split: str, filename: str, root: str = Query(...)):
 @app.get("/api/annotate/label/{split}/{stem}")
 def api_annotate_label(split: str, stem: str, root: str = Query(...)):
     dataset = resolve_root(root)
-    label = read_label(dataset, split, stem)
-    return {"ok": True, "label": label}
+    ears = read_ear_labels(dataset, split, stem)
+    return {"ok": True, "ears": ears}
 
 
 @app.post("/api/annotate/save")
@@ -278,10 +277,20 @@ def api_annotate_save(body: SaveAnnotation):
     dataset = resolve_root(body.root)
     if body.image_width < 1 or body.image_height < 1:
         raise HTTPException(400, "invalid image dimensions")
-    kx = body.x / body.image_width
-    ky = body.y / body.image_height
+    if body.left is None and body.right is None:
+        raise HTTPException(400, "mark at least one earlobe (left or right)")
     img_path = safe_image_path(dataset, body.split, body.filename)
-    write_label(dataset, body.split, img_path.stem, kx, ky)
+    left = {"x": body.left.x, "y": body.left.y} if body.left else None
+    right = {"x": body.right.x, "y": body.right.y} if body.right else None
+    write_ear_labels(
+        dataset,
+        body.split,
+        img_path.stem,
+        left,
+        right,
+        body.image_width,
+        body.image_height,
+    )
     items = list_images(dataset)
     return {
         "ok": True,
