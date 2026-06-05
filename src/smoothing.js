@@ -8,7 +8,7 @@ export class EarPointSmoother {
    * @param {{ tauMs?: number, hystOn?: number, hystOff?: number }} [opts]
    */
   constructor(opts = {}) {
-    this.tauMs = opts.tauMs ?? 70;
+    this.tauMs = opts.tauMs ?? 18;
     this.hystOn = opts.hystOn ?? 0.55;
     this.hystOff = opts.hystOff ?? 0.45;
     this.visible = false;
