@@ -179,6 +179,7 @@ def export_web_library(root_project: Path) -> dict:
         ("src/decoder.js", "src/decoder.js"),
         ("src/tracking-defaults.js", "src/tracking-defaults.js"),
         ("src/device.js", "src/device.js"),
+        ("src/smoothing.js", "src/smoothing.js"),
         ("config/tracking.json", "config/tracking.json"),
         ("examples/standalone-export.html", "example.html"),
     ]

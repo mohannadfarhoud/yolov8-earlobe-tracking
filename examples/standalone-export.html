@@ -95,7 +95,7 @@
           mirrorX: true,
         });
         status.textContent = tracker.isMobile
-          ? 'Ready (mobile mode — ~5 FPS, low memory)'
+          ? 'Ready (smooth tracking, low memory mode)'
           : 'Ready';
 
         tracker.startLoop(video, ({ left, right }) => {

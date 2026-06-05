@@ -1,12 +1,13 @@
 /**
  * Browser library: detect left and/or right earlobe from a trained 2-class pose model.
- * Auto-detects phones and uses lighter settings to avoid tab crashes.
+ * Inference is throttled for stability; display positions are smoothed every frame.
  */
 
 import { isMobileDevice } from './device.js';
 import { decodeBothEars } from './decoder.js';
 import { letterboxFromCanvas, letterboxToTensor, mapToScreen, mapToSource } from './letterbox.js';
 import { createSession, runInference } from './onnx-engine.js';
+import { EarPointSmoother, smoothBothEars } from './smoothing.js';
 import { DEFAULT_TRACKING_CFG } from './tracking-defaults.js';
 
 const EMPTY = { left: null, right: null };
@@ -21,6 +22,18 @@ function mapEar(ear, lb, mirrorX) {
     confidence: ear.conf,
     xRaw: src.x,
     yRaw: src.y,
+  };
+}
+
+function makeSmoothers(options, mobile) {
+  const hyst = options.smoothHysteresis ?? DEFAULT_TRACKING_CFG.smoothHysteresis;
+  const tauMs =
+    options.smoothTauMs ??
+    (mobile ? DEFAULT_TRACKING_CFG.mobileSmoothTauMs : DEFAULT_TRACKING_CFG.smoothTauMs);
+  const base = { tauMs, hystOn: hyst.on, hystOff: hyst.off };
+  return {
+    left: new EarPointSmoother(base),
+    right: new EarPointSmoother(base),
   };
 }
 
@@ -55,11 +68,12 @@ export async function createEarlobeTracker(options = {}) {
   let inferBusy = false;
   let lastInfer = 0;
   let lastResult = { ...EMPTY };
-  let loopTimer = 0;
+  let loopInferTimer = 0;
   let loopRaf = 0;
   let loopRunning = false;
   let disposed = false;
   let onVisibilityChange = null;
+  let smoothers = makeSmoothers(options, mobile);
 
   async function detect(frameSource) {
     if (disposed) return lastResult;
@@ -102,57 +116,50 @@ export async function createEarlobeTracker(options = {}) {
     return side === 'left' ? r.left : r.right;
   }
 
+  function getSmoothedResult(now = performance.now()) {
+    return smoothBothEars(lastResult, smoothers, now);
+  }
+
   /**
-   * Safe loop — one inference at a time. On mobile uses setTimeout (less CPU than rAF).
+   * Inference on a slow timer; smooth display every animation frame.
+   * ONNX load unchanged — only cheap lerp runs at 60 FPS.
    */
   function startLoop(frameSource, onResult, loopOpts = {}) {
     stopLoop();
-    const interval = loopOpts.intervalMs ?? minIntervalMs;
-    const useTimer = loopOpts.useTimer ?? mobile;
+    const inferInterval = loopOpts.intervalMs ?? minIntervalMs;
+    smoothers = makeSmoothers(options, mobile);
     loopRunning = true;
 
     if (onVisibilityChange) {
       document.removeEventListener('visibilitychange', onVisibilityChange);
     }
     onVisibilityChange = () => {
-      if (document.hidden) {
-        stopLoop();
-      }
+      if (document.hidden) stopLoop();
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
 
-    if (useTimer) {
-      const step = async () => {
-        if (!loopRunning || disposed) return;
-        if (!inferBusy) {
-          await detect(frameSource);
-        }
-        onResult(lastResult);
-        loopTimer = window.setTimeout(step, interval);
-      };
-      step();
-    } else {
-      let lastTickInfer = 0;
-      const tick = (t) => {
-        if (!loopRunning || disposed) return;
-        if (!inferBusy && t - lastTickInfer >= interval) {
-          lastTickInfer = t;
-          detect(frameSource).then((r) => onResult(r)).catch((e) => console.error(e));
-        } else {
-          onResult(lastResult);
-        }
-        loopRaf = requestAnimationFrame(tick);
-      };
-      loopRaf = requestAnimationFrame(tick);
-    }
+    const scheduleInfer = () => {
+      if (!loopRunning || disposed) return;
+      if (!inferBusy) detect(frameSource).catch((e) => console.error(e));
+      loopInferTimer = window.setTimeout(scheduleInfer, inferInterval);
+    };
+    scheduleInfer();
+
+    const displayTick = (now) => {
+      if (!loopRunning || disposed) return;
+      onResult(getSmoothedResult(now));
+      loopRaf = requestAnimationFrame(displayTick);
+    };
+    loopRaf = requestAnimationFrame(displayTick);
+
     return stopLoop;
   }
 
   function stopLoop() {
     loopRunning = false;
-    if (loopTimer) {
-      clearTimeout(loopTimer);
-      loopTimer = 0;
+    if (loopInferTimer) {
+      clearTimeout(loopInferTimer);
+      loopInferTimer = 0;
     }
     if (loopRaf) {
       cancelAnimationFrame(loopRaf);
@@ -184,6 +191,7 @@ export async function createEarlobeTracker(options = {}) {
     stopLoop,
     dispose,
     getLastResult: () => lastResult,
+    getSmoothedResult,
     isMobile: mobile,
   };
 }

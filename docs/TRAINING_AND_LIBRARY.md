@@ -123,7 +123,7 @@ tracker.dispose();
 Phones have much less RAM than a PC. The library auto-detects mobile and:
 
 - Limits camera to ~480p and 15 FPS
-- Runs inference ~5×/sec (not 30×/sec)
+- Runs inference ~6–7×/sec; display is smoothed at 60 FPS (no extra ONNX cost)
 - Uses WASM only (no WebGPU)
 - Pauses when the tab is hidden
 
