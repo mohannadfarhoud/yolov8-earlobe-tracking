@@ -188,6 +188,8 @@ def export_web_library(root_project: Path, model_path: Optional[Path] = None) ->
         ("src/device.js", "src/device.js"),
         ("src/smoothing.js", "src/smoothing.js"),
         ("src/motion-trigger.js", "src/motion-trigger.js"),
+        ("src/earlobe-worker.js", "src/earlobe-worker.js"),
+        ("src/worker-client.js", "src/worker-client.js"),
         ("config/tracking.json", "config/tracking.json"),
         ("examples/standalone-export.html", "example.html"),
         ("examples/mediapipe-export.html", "example-mediapipe.html"),
@@ -201,16 +203,20 @@ def export_web_library(root_project: Path, model_path: Optional[Path] = None) ->
     readme.write_text(
         "Earlobe web library export\n"
         "==========================\n\n"
-        "RECOMMENDED — MediaPipe motion trigger (not fixed interval):\n"
+        "RECOMMENDED — Web Worker + MediaPipe motion trigger:\n"
+        "  const tracker = await createEarlobeTracker({\n"
+        "    modelUrl: './models/best.onnx',\n"
+        "    useWorker: true,  // default — ONNX off UI thread\n"
+        "  });\n"
         "  const ctrl = tracker.startMotionDriven(video, onResult);\n"
-        "  // In your MediaPipe callback:\n"
-        "  ctrl.onLandmarks(faceLandmarks[0]);\n"
+        "  ctrl.onLandmarks(faceLandmarks[0]);  // in MediaPipe callback\n"
         "  See example-mediapipe.html\n\n"
         "Avoid browser crashes:\n"
-        "  1. Use startMotionDriven() or startLoop() — NOT detect() in a tight loop\n"
-        "  2. minIntervalMs cooldown still applies (default 50–100ms on phone)\n"
-        "  3. Use getMobileCameraConstraints() for getUserMedia\n"
-        "  4. Serve over https or http://localhost — not file://\n\n"
+        "  1. useWorker: true (default) keeps your UI smooth\n"
+        "  2. Use startMotionDriven() — NOT detect() in a tight loop\n"
+        "  3. minIntervalMs cooldown still applies (~66ms phone with worker)\n"
+        "  4. Use getMobileCameraConstraints() for getUserMedia\n"
+        "  5. Serve over https or http://localhost — not file://\n\n"
         "Quick test:\n"
         "  python -m http.server 8080\n"
         "  http://localhost:8080/example-mediapipe.html\n\n"

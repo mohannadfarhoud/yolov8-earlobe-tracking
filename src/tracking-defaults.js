@@ -9,6 +9,8 @@ export const DEFAULT_TRACKING_CFG = {
   nmsIou: 0.45,
   inferenceIntervalMs: 33,
   mobileInferenceIntervalMs: 100,
+  workerInferenceIntervalMs: 33,
+  workerMobileInferenceIntervalMs: 66,
   mobileMaxCaptureSide: 384,
   desktopMaxCaptureSide: 960,
   smoothTauMs: 18,

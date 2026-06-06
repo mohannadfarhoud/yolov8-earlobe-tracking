@@ -1,6 +1,6 @@
 /**
  * Browser library: detect left and/or right earlobe from a trained 2-class pose model.
- * Use startMotionDriven() with MediaPipe triggers, or startLoop() for interval mode.
+ * useWorker: true (default) runs ONNX in a Web Worker so your UI stays smooth.
  */
 
 import { isMobileDevice } from './device.js';
@@ -10,8 +10,10 @@ import { MotionTrigger } from './motion-trigger.js';
 import { createSession, runInference } from './onnx-engine.js';
 import { EarPointSmoother, smoothBothEars } from './smoothing.js';
 import { DEFAULT_TRACKING_CFG } from './tracking-defaults.js';
+import { EarlobeWorkerClient } from './worker-client.js';
 
 const EMPTY = { left: null, right: null };
+const TENSOR_SIZE = 1 * 3 * 640 * 640;
 
 function mapEar(ear, lb, mirrorX) {
   if (!ear) return null;
@@ -23,6 +25,13 @@ function mapEar(ear, lb, mirrorX) {
     confidence: ear.conf,
     xRaw: src.x,
     yRaw: src.y,
+  };
+}
+
+function mapEarsFromWorker(ears, lb, mirrorX) {
+  return {
+    left: ears.left ? mapEar({ x: ears.left.x, y: ears.left.y, conf: ears.left.conf }, lb, mirrorX) : null,
+    right: ears.right ? mapEar({ x: ears.right.x, y: ears.right.y, conf: ears.right.conf }, lb, mirrorX) : null,
   };
 }
 
@@ -50,21 +59,57 @@ export async function createEarlobeTracker(options = {}) {
     nmsIou: options.nmsIou ?? DEFAULT_TRACKING_CFG.nmsIou,
   };
   const mirrorX = options.mirrorX !== false;
-  const minIntervalMs =
-    options.minIntervalMs ??
-    (mobile ? DEFAULT_TRACKING_CFG.mobileInferenceIntervalMs : DEFAULT_TRACKING_CFG.inferenceIntervalMs);
+  const useWorker = options.useWorker !== false && typeof Worker !== 'undefined';
+  const useGpu = mobile ? false : options.useGpu === true;
+
+  const defaultInterval = useWorker
+    ? mobile
+      ? DEFAULT_TRACKING_CFG.workerMobileInferenceIntervalMs
+      : DEFAULT_TRACKING_CFG.workerInferenceIntervalMs
+    : mobile
+      ? DEFAULT_TRACKING_CFG.mobileInferenceIntervalMs
+      : DEFAULT_TRACKING_CFG.inferenceIntervalMs;
+
+  const minIntervalMs = options.minIntervalMs ?? defaultInterval;
   const maxCaptureSide =
     options.maxCaptureSide ??
     (mobile ? DEFAULT_TRACKING_CFG.mobileMaxCaptureSide : DEFAULT_TRACKING_CFG.desktopMaxCaptureSide);
 
-  const { session, inputName } = await createSession(options.modelUrl, {
-    useGpu: mobile ? false : options.useGpu === true,
-    mobile,
-  });
+  let workerClient = null;
+  let session = null;
+  let inputName = '';
+  let tensorReuse = {};
+  let usingWorker = false;
+
+  if (useWorker) {
+    try {
+      workerClient = new EarlobeWorkerClient(options.workerUrl);
+      await workerClient.init({
+        modelUrl: options.modelUrl,
+        cfg,
+        mobile,
+        useGpu,
+      });
+      usingWorker = true;
+      console.info('Earlobe tracker: ONNX running in Web Worker');
+    } catch (e) {
+      console.warn('Earlobe worker failed, falling back to main thread:', e);
+      workerClient?.dispose();
+      workerClient = null;
+    }
+  }
+
+  if (!usingWorker) {
+    const created = await createSession(options.modelUrl, { useGpu, mobile });
+    session = created.session;
+    inputName = created.inputName;
+    tensorReuse = {};
+    console.info('Earlobe tracker: ONNX on main thread');
+  }
+
   const offscreen = document.createElement('canvas');
   const captureCanvas = document.createElement('canvas');
-  const tensorBuf = new Float32Array(1 * 3 * 640 * 640);
-  const tensorReuse = {};
+  let tensorBuf = new Float32Array(TENSOR_SIZE);
 
   let inferBusy = false;
   let lastInfer = 0;
@@ -76,6 +121,24 @@ export async function createEarlobeTracker(options = {}) {
   let onVisibilityChange = null;
   let smoothers = makeSmoothers(options, mobile);
   let boundFrameSource = null;
+
+  async function runInferenceBackend(lb) {
+    if (usingWorker && workerClient) {
+      return workerClient.infer(lb.tensor);
+    }
+    const { data, dims } = await runInference(session, inputName, lb.tensor, tensorReuse);
+    return decodeBothEars(data, dims, cfg);
+  }
+
+  function applyEars(ears, lb) {
+    if (usingWorker) {
+      return mapEarsFromWorker(ears, lb, mirrorX);
+    }
+    return {
+      left: mapEar(ears.left, lb, mirrorX),
+      right: mapEar(ears.right, lb, mirrorX),
+    };
+  }
 
   async function detect(frameSource) {
     if (disposed) return lastResult;
@@ -97,13 +160,12 @@ export async function createEarlobeTracker(options = {}) {
 
     inferBusy = true;
     try {
-      const { data, dims } = await runInference(session, inputName, lb.tensor, tensorReuse);
-      const ears = decodeBothEars(data, dims, cfg);
-      lastResult = {
-        left: mapEar(ears.left, lb, mirrorX),
-        right: mapEar(ears.right, lb, mirrorX),
-      };
+      const ears = await runInferenceBackend(lb);
+      lastResult = applyEars(ears, lb);
       lastInfer = performance.now();
+      if (!tensorBuf.byteLength) {
+        tensorBuf = new Float32Array(TENSOR_SIZE);
+      }
       return lastResult;
     } catch (e) {
       console.error('Earlobe detect failed:', e);
@@ -113,7 +175,6 @@ export async function createEarlobeTracker(options = {}) {
     }
   }
 
-  /** Run ONNX when an external trigger (e.g. MediaPipe) requests it. Respects cooldown. */
   function requestDetect(frameSource) {
     const src = frameSource ?? boundFrameSource;
     if (!src) return Promise.resolve(lastResult);
@@ -139,9 +200,6 @@ export async function createEarlobeTracker(options = {}) {
     document.addEventListener('visibilitychange', onVisibilityChange);
   }
 
-  /**
-   * Smooth 60 FPS display only — no timed inference.
-   */
   function startDisplayLoop(frameSource, onResult, loopOpts = {}) {
     stopLoop();
     boundFrameSource = frameSource;
@@ -163,10 +221,6 @@ export async function createEarlobeTracker(options = {}) {
     return stopLoop;
   }
 
-  /**
-   * MediaPipe / motion-driven mode: ONNX runs only when landmarks move (plus cooldown).
-   * @returns {{ stop, onLandmarks, requestDetect, motionTrigger }}
-   */
   function startMotionDriven(frameSource, onResult, loopOpts = {}) {
     const motionTrigger = loopOpts.motionTrigger ?? new MotionTrigger(loopOpts.motionTriggerOptions);
     const shouldDetect = loopOpts.shouldDetect;
@@ -189,9 +243,6 @@ export async function createEarlobeTracker(options = {}) {
     };
   }
 
-  /**
-   * Interval mode (legacy): timed inference + smooth display.
-   */
   function startLoop(frameSource, onResult, loopOpts = {}) {
     stopLoop();
     const inferInterval = loopOpts.intervalMs ?? minIntervalMs;
@@ -238,12 +289,18 @@ export async function createEarlobeTracker(options = {}) {
       document.removeEventListener('visibilitychange', onVisibilityChange);
       onVisibilityChange = null;
     }
-    disposeTensor(tensorReuse.inputTensor);
-    tensorReuse.inputTensor = null;
-    try {
-      await session.release();
-    } catch (e) {
-      console.warn('session.release', e);
+    if (usingWorker && workerClient) {
+      workerClient.dispose();
+      workerClient = null;
+    } else if (session) {
+      disposeTensor(tensorReuse.inputTensor);
+      tensorReuse = {};
+      try {
+        await session.release();
+      } catch (e) {
+        console.warn('session.release', e);
+      }
+      session = null;
     }
   }
 
@@ -259,6 +316,7 @@ export async function createEarlobeTracker(options = {}) {
     getLastResult: () => lastResult,
     getSmoothedResult,
     isMobile: mobile,
+    usingWorker,
   };
 }
 
@@ -272,4 +330,5 @@ function disposeTensor(t) {
 
 export { isMobileDevice, getMobileCameraConstraints } from './device.js';
 export { MotionTrigger, MEDIAPIPE_LANDMARKS } from './motion-trigger.js';
+export { EarlobeWorkerClient } from './worker-client.js';
 export default createEarlobeTracker;

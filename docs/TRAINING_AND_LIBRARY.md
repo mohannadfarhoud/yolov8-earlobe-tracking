@@ -105,7 +105,8 @@ import { createEarlobeTracker } from './earlobe-tracker.js';
 const tracker = await createEarlobeTracker({
   modelUrl: '/models/best.onnx',
   mirrorX: true,
-  minIntervalMs: 50, // safety cooldown between ONNX runs
+  useWorker: true, // default — ONNX runs off the UI thread
+  minIntervalMs: 66, // optional; ~15 scans/sec on phone with worker
 });
 
 const motionCtrl = tracker.startMotionDriven(video, ({ left, right }) => {
@@ -129,6 +130,10 @@ tracker.dispose();
 ```
 
 Demo: `examples/mediapipe-trigger.html` (repo) or `example-mediapipe.html` (export).
+
+### Web Worker (default)
+
+`useWorker: true` (default) loads `earlobe-worker.js` so ONNX inference does not block your UI. Set `useWorker: false` to run on the main thread. Pass `workerUrl` if the worker file is hosted elsewhere.
 
 ### API — interval fallback
 

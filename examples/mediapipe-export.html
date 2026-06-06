@@ -67,7 +67,7 @@
       const tracker = await createEarlobeTracker({
         modelUrl: './models/best.onnx',
         mirrorX: true,
-        minIntervalMs: 50,
+        useWorker: true,
       });
 
       const motionCtrl = tracker.startMotionDriven(video, ({ left, right }) => {
@@ -97,7 +97,9 @@
         runningMode: 'VIDEO',
         numFaces: 1,
       });
-      status.textContent = 'Ready — ONNX on movement';
+      status.textContent = tracker.usingWorker
+        ? 'Ready — ONNX in Web Worker (UI stays smooth)'
+        : 'Ready — ONNX on movement';
 
       let lastT = -1;
       (function mpLoop() {
