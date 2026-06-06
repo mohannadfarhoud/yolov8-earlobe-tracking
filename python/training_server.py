@@ -351,10 +351,10 @@ def api_model_verify():
 
 @app.post("/api/model/export-library")
 def api_model_export_library():
-    if not ONNX_PATH.is_file():
-        raise HTTPException(400, "best.onnx not found — train first")
     try:
-        info = export_web_library(ROOT)
+        info = export_web_library(ROOT, model_path=ONNX_PATH if ONNX_PATH.is_file() else None)
+        if not info["has_model"]:
+            raise HTTPException(400, "best.onnx not found — train first")
         export_dir = Path(info["export_dir"])
         zip_base = str(export_dir.parent / "earlobe-web-library")
         if Path(zip_base + ".zip").is_file():

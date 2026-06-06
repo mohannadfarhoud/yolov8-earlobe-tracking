@@ -159,10 +159,9 @@ def split_train_to_val(root: Path, val_ratio: float = 0.15, seed: int = 42) -> d
     return {"moved": moved, "message": f"Moved {moved} pairs to val"}
 
 
-def export_web_library(root_project: Path) -> dict:
-    onnx_src = root_project / "public" / "models" / "best.onnx"
-    if not onnx_src.is_file():
-        raise FileNotFoundError("best.onnx not found — train first")
+def export_web_library(root_project: Path, model_path: Optional[Path] = None) -> dict:
+    onnx_src = model_path or (root_project / "public" / "models" / "best.onnx")
+    has_model = onnx_src.is_file()
 
     export_dir = root_project / "export" / "web-library"
     if export_dir.exists():
@@ -170,7 +169,15 @@ def export_web_library(root_project: Path) -> dict:
     (export_dir / "models").mkdir(parents=True)
     (export_dir / "src").mkdir(parents=True)
     (export_dir / "config").mkdir(parents=True)
-    shutil.copy2(onnx_src, export_dir / "models" / "best.onnx")
+    if has_model:
+        shutil.copy2(onnx_src, export_dir / "models" / "best.onnx")
+    else:
+        (export_dir / "models" / "COPY_best.onnx_HERE.txt").write_text(
+            "Copy your trained model here as best.onnx\n"
+            "Train in the web UI (tab 2–3) or run: python python/train.py --data data.yaml\n"
+            "Output: public/models/best.onnx\n",
+            encoding="utf-8",
+        )
 
     copies = [
         ("src/earlobe-tracker.js", "src/earlobe-tracker.js"),
@@ -180,8 +187,10 @@ def export_web_library(root_project: Path) -> dict:
         ("src/tracking-defaults.js", "src/tracking-defaults.js"),
         ("src/device.js", "src/device.js"),
         ("src/smoothing.js", "src/smoothing.js"),
+        ("src/motion-trigger.js", "src/motion-trigger.js"),
         ("config/tracking.json", "config/tracking.json"),
         ("examples/standalone-export.html", "example.html"),
+        ("examples/mediapipe-export.html", "example-mediapipe.html"),
     ]
     for src_rel, dest_rel in copies:
         src = root_project / src_rel
@@ -192,22 +201,25 @@ def export_web_library(root_project: Path) -> dict:
     readme.write_text(
         "Earlobe web library export\n"
         "==========================\n\n"
-        "IMPORTANT — avoid browser crashes (especially on phones):\n"
-        "  1. Use tracker.startLoop(video, callback) — NOT detect() in a tight loop\n"
-        "  2. On mobile the library auto-slows to ~5 FPS and downscales camera frames\n"
-        "  3. Use getMobileCameraConstraints() for getUserMedia (see example.html)\n"
-        "  4. Serve over https or http://localhost — not file://\n"
-        "  5. npm install onnxruntime-web OR use the import map in example.html\n"
-        "  6. iPhone: use Safari; close other tabs before loading (model + WASM need RAM)\n\n"
+        "RECOMMENDED — MediaPipe motion trigger (not fixed interval):\n"
+        "  const ctrl = tracker.startMotionDriven(video, onResult);\n"
+        "  // In your MediaPipe callback:\n"
+        "  ctrl.onLandmarks(faceLandmarks[0]);\n"
+        "  See example-mediapipe.html\n\n"
+        "Avoid browser crashes:\n"
+        "  1. Use startMotionDriven() or startLoop() — NOT detect() in a tight loop\n"
+        "  2. minIntervalMs cooldown still applies (default 50–100ms on phone)\n"
+        "  3. Use getMobileCameraConstraints() for getUserMedia\n"
+        "  4. Serve over https or http://localhost — not file://\n\n"
         "Quick test:\n"
-        "  cd web-library\n"
         "  python -m http.server 8080\n"
-        "  Open http://localhost:8080/example.html\n\n"
-        "API:\n"
-        "  const tracker = await createEarlobeTracker({ modelUrl: './models/best.onnx' });\n"
-        "  tracker.startLoop(video, ({ left, right }) => { ... });\n"
-        "  // left/right: { x, y, confidence } or null\n"
-        "  tracker.dispose(); // when done\n",
+        "  http://localhost:8080/example-mediapipe.html\n\n"
+        "Interval fallback:\n"
+        "  tracker.startLoop(video, ({ left, right }) => { ... });\n",
         encoding="utf-8",
     )
-    return {"export_dir": str(export_dir)}
+    return {
+        "export_dir": str(export_dir),
+        "has_model": has_model,
+        "model_path": str(onnx_src) if has_model else None,
+    }

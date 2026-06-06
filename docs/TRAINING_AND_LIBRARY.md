@@ -95,7 +95,9 @@ npm install onnxruntime-web
 
 Or import from this repo if you use Vite/npm link.
 
-### API (safe — won't crash the tab)
+### API — MediaPipe motion trigger (recommended)
+
+ONNX runs only when MediaPipe detects face movement. Display stays smooth at 60 FPS.
 
 ```javascript
 import { createEarlobeTracker } from './earlobe-tracker.js';
@@ -103,20 +105,38 @@ import { createEarlobeTracker } from './earlobe-tracker.js';
 const tracker = await createEarlobeTracker({
   modelUrl: '/models/best.onnx',
   mirrorX: true,
-  useGpu: false, // default; WebGPU can crash some GPUs
+  minIntervalMs: 50, // safety cooldown between ONNX runs
 });
 
-// Use startLoop — one inference at a time, throttled (~30ms)
-tracker.startLoop(yourVideoElement, ({ left, right }) => {
-  if (left) { /* left.x, left.y, left.confidence */ }
-  if (right) { /* right.x, right.y, right.confidence */ }
+const motionCtrl = tracker.startMotionDriven(video, ({ left, right }) => {
+  // smooth feedback every frame — update your UI here
 });
 
-// When leaving the page:
+// Inside your existing MediaPipe Face Landmarker callback:
+function onMediaPipeResults(results) {
+  if (results.faceLandmarks?.[0]) {
+    motionCtrl.onLandmarks(results.faceLandmarks[0]);
+  } else {
+    motionCtrl.motionTrigger.reset();
+  }
+}
+
+// Or trigger manually when your app decides:
+motionCtrl.requestDetect();
+
+motionCtrl.stop();
 tracker.dispose();
 ```
 
-**Do not** call `detect()` inside `requestAnimationFrame` without awaiting — overlapping ONNX runs can freeze or crash the browser.
+Demo: `examples/mediapipe-trigger.html` (repo) or `example-mediapipe.html` (export).
+
+### API — interval fallback
+
+```javascript
+tracker.startLoop(video, ({ left, right }) => { ... });
+```
+
+**Do not** call `detect()` inside a tight loop without throttling — overlapping ONNX runs can crash the browser.
 
 ### Mobile phones
 
@@ -135,7 +155,8 @@ video.srcObject = stream;
 await video.play();
 
 const tracker = await createEarlobeTracker({ modelUrl: './models/best.onnx' });
-tracker.startLoop(video, onResult); // mobile-safe by default
+const motionCtrl = tracker.startMotionDriven(video, onResult);
+// wire motionCtrl.onLandmarks() to your MediaPipe callback
 ```
 
 Serve your page over **HTTPS** (required for camera on many phones). Close other tabs before loading — the ONNX model + WASM runtime need ~50–80 MB.
@@ -150,7 +171,7 @@ After **Export** in the training UI, open `export/web-library/README.txt`. Serve
 npm run dev
 ```
 
-Open `http://localhost:5173/examples/earlobe-only.html`
+Open `http://localhost:5173/examples/mediapipe-trigger.html` (motion trigger) or `earlobe-only.html` (interval)
 
 ---
 

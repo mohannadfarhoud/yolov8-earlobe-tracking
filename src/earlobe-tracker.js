@@ -1,11 +1,12 @@
 /**
  * Browser library: detect left and/or right earlobe from a trained 2-class pose model.
- * Inference is throttled for stability; display positions are smoothed every frame.
+ * Use startMotionDriven() with MediaPipe triggers, or startLoop() for interval mode.
  */
 
 import { isMobileDevice } from './device.js';
 import { decodeBothEars } from './decoder.js';
 import { letterboxFromCanvas, letterboxToTensor, mapToScreen, mapToSource } from './letterbox.js';
+import { MotionTrigger } from './motion-trigger.js';
 import { createSession, runInference } from './onnx-engine.js';
 import { EarPointSmoother, smoothBothEars } from './smoothing.js';
 import { DEFAULT_TRACKING_CFG } from './tracking-defaults.js';
@@ -74,6 +75,7 @@ export async function createEarlobeTracker(options = {}) {
   let disposed = false;
   let onVisibilityChange = null;
   let smoothers = makeSmoothers(options, mobile);
+  let boundFrameSource = null;
 
   async function detect(frameSource) {
     if (disposed) return lastResult;
@@ -111,6 +113,13 @@ export async function createEarlobeTracker(options = {}) {
     }
   }
 
+  /** Run ONNX when an external trigger (e.g. MediaPipe) requests it. Respects cooldown. */
+  function requestDetect(frameSource) {
+    const src = frameSource ?? boundFrameSource;
+    if (!src) return Promise.resolve(lastResult);
+    return detect(src);
+  }
+
   async function detectSide(frameSource, side) {
     const r = await detect(frameSource);
     return side === 'left' ? r.left : r.right;
@@ -120,16 +129,7 @@ export async function createEarlobeTracker(options = {}) {
     return smoothBothEars(lastResult, smoothers, now);
   }
 
-  /**
-   * Inference on a slow timer; smooth display every animation frame.
-   * ONNX load unchanged — only cheap lerp runs at 60 FPS.
-   */
-  function startLoop(frameSource, onResult, loopOpts = {}) {
-    stopLoop();
-    const inferInterval = loopOpts.intervalMs ?? minIntervalMs;
-    smoothers = makeSmoothers(options, mobile);
-    loopRunning = true;
-
+  function bindVisibilityStop() {
     if (onVisibilityChange) {
       document.removeEventListener('visibilitychange', onVisibilityChange);
     }
@@ -137,10 +137,72 @@ export async function createEarlobeTracker(options = {}) {
       if (document.hidden) stopLoop();
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
+  }
+
+  /**
+   * Smooth 60 FPS display only — no timed inference.
+   */
+  function startDisplayLoop(frameSource, onResult, loopOpts = {}) {
+    stopLoop();
+    boundFrameSource = frameSource;
+    smoothers = makeSmoothers(options, mobile);
+    loopRunning = true;
+    bindVisibilityStop();
+
+    const displayTick = (now) => {
+      if (!loopRunning || disposed) return;
+      onResult(getSmoothedResult(now));
+      loopRaf = requestAnimationFrame(displayTick);
+    };
+    loopRaf = requestAnimationFrame(displayTick);
+
+    if (loopOpts.initialDetect !== false) {
+      requestDetect(frameSource).catch((e) => console.error(e));
+    }
+
+    return stopLoop;
+  }
+
+  /**
+   * MediaPipe / motion-driven mode: ONNX runs only when landmarks move (plus cooldown).
+   * @returns {{ stop, onLandmarks, requestDetect, motionTrigger }}
+   */
+  function startMotionDriven(frameSource, onResult, loopOpts = {}) {
+    const motionTrigger = loopOpts.motionTrigger ?? new MotionTrigger(loopOpts.motionTriggerOptions);
+    const shouldDetect = loopOpts.shouldDetect;
+
+    startDisplayLoop(frameSource, onResult, loopOpts);
+
+    function onLandmarks(landmarks) {
+      if (!loopRunning || disposed) return;
+      const fire = shouldDetect ? shouldDetect(landmarks) : motionTrigger.check(landmarks);
+      if (fire) {
+        requestDetect(frameSource).catch((e) => console.error(e));
+      }
+    }
+
+    return {
+      stop: stopLoop,
+      onLandmarks,
+      requestDetect: () => requestDetect(frameSource),
+      motionTrigger,
+    };
+  }
+
+  /**
+   * Interval mode (legacy): timed inference + smooth display.
+   */
+  function startLoop(frameSource, onResult, loopOpts = {}) {
+    stopLoop();
+    const inferInterval = loopOpts.intervalMs ?? minIntervalMs;
+    boundFrameSource = frameSource;
+    smoothers = makeSmoothers(options, mobile);
+    loopRunning = true;
+    bindVisibilityStop();
 
     const scheduleInfer = () => {
       if (!loopRunning || disposed) return;
-      if (!inferBusy) detect(frameSource).catch((e) => console.error(e));
+      if (!inferBusy) requestDetect(frameSource).catch((e) => console.error(e));
       loopInferTimer = window.setTimeout(scheduleInfer, inferInterval);
     };
     scheduleInfer();
@@ -157,6 +219,7 @@ export async function createEarlobeTracker(options = {}) {
 
   function stopLoop() {
     loopRunning = false;
+    boundFrameSource = null;
     if (loopInferTimer) {
       clearTimeout(loopInferTimer);
       loopInferTimer = 0;
@@ -186,8 +249,11 @@ export async function createEarlobeTracker(options = {}) {
 
   return {
     detect,
+    requestDetect,
     detectSide,
     startLoop,
+    startDisplayLoop,
+    startMotionDriven,
     stopLoop,
     dispose,
     getLastResult: () => lastResult,
@@ -205,4 +271,5 @@ function disposeTensor(t) {
 }
 
 export { isMobileDevice, getMobileCameraConstraints } from './device.js';
+export { MotionTrigger, MEDIAPIPE_LANDMARKS } from './motion-trigger.js';
 export default createEarlobeTracker;
