@@ -7,6 +7,8 @@ export const DEFAULT_TRACKING_CFG = {
   boxConfThreshold: 0.5,
   kptConfThreshold: 0.5,
   nmsIou: 0.45,
+  defaultFps: 30,
+  mobileDefaultFps: 15,
   inferenceIntervalMs: 33,
   mobileInferenceIntervalMs: 100,
   workerInferenceIntervalMs: 33,

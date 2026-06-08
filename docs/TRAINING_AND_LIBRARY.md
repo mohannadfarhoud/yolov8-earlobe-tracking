@@ -77,71 +77,51 @@ Output: `public\models\best.onnx`
 
 ---
 
-## Step 4 — Use the library in your page
+## Step 4 — Export library for your UI app
 
-### Install dependency
+Your UI application is **separate**. This repo only ships an abstract detection library.
+
+```powershell
+python python/export_library.py --model public\models\best.onnx
+```
+
+Copy `export/web-library/` into your project. See **[LIBRARY.md](LIBRARY.md)** for the full API contract.
+
+### Install dependency (in your UI app)
 
 ```bash
 npm install onnxruntime-web
 ```
 
-### Copy these files into your project
-
-- `src/earlobe-tracker.js`
-- `src/onnx-engine.js`
-- `src/letterbox.js`
-- `src/decoder.js`
-- `config/tracking.json`
-
-Or import from this repo if you use Vite/npm link.
-
-### API — MediaPipe motion trigger (recommended)
-
-ONNX runs only when MediaPipe detects face movement. Display stays smooth at 60 FPS.
+### API (your UI app — no MediaPipe required)
 
 ```javascript
-import { createEarlobeTracker } from './earlobe-tracker.js';
+import { createEarlobeTracker, getMobileCameraConstraints } from './earlobe-tracker.js';
 
 const tracker = await createEarlobeTracker({
   modelUrl: '/models/best.onnx',
   mirrorX: true,
-  useWorker: true, // default — ONNX runs off the UI thread
-  minIntervalMs: 66, // optional; ~15 scans/sec on phone with worker
+  useWorker: true,       // default — ONNX off UI thread
+  minIntervalMs: 50,     // scan every 50ms (lower = faster; try 33 on PC, 50–66 on phone)
 });
 
-const motionCtrl = tracker.startMotionDriven(video, ({ left, right }) => {
-  // smooth feedback every frame — update your UI here
+tracker.startLoop(video, ({ left, right }) => {
+  // runs every animation frame (smooth); ONNX scans at minIntervalMs
+  if (left) { /* left.x, left.y, left.confidence */ }
 });
 
-// Inside your existing MediaPipe Face Landmarker callback:
-function onMediaPipeResults(results) {
-  if (results.faceLandmarks?.[0]) {
-    motionCtrl.onLandmarks(results.faceLandmarks[0]);
-  } else {
-    motionCtrl.motionTrigger.reset();
-  }
-}
-
-// Or trigger manually when your app decides:
-motionCtrl.requestDetect();
-
-motionCtrl.stop();
 tracker.dispose();
 ```
 
-Demo: `examples/mediapipe-trigger.html` (repo) or `example-mediapipe.html` (export).
+`minIntervalMs` controls how often ONNX runs. Display is still smooth at 60 FPS.
 
 ### Web Worker (default)
 
-`useWorker: true` (default) loads `earlobe-worker.js` so ONNX inference does not block your UI. Set `useWorker: false` to run on the main thread. Pass `workerUrl` if the worker file is hosted elsewhere.
+`useWorker: true` loads `earlobe-worker.js` so ONNX does not block your UI.
 
-### API — interval fallback
+**Do not** call `detect()` in a tight loop — use `startLoop()`.
 
-```javascript
-tracker.startLoop(video, ({ left, right }) => { ... });
-```
-
-**Do not** call `detect()` inside a tight loop without throttling — overlapping ONNX runs can crash the browser.
+MediaPipe and other face logic belong in **your UI** — not in this library. Optional `startMotionDriven()` exists if you pass landmarks from your own code; see `examples/mediapipe-trigger.html` in the repo only.
 
 ### Mobile phones
 
@@ -159,24 +139,20 @@ const stream = await navigator.mediaDevices.getUserMedia(getMobileCameraConstrai
 video.srcObject = stream;
 await video.play();
 
-const tracker = await createEarlobeTracker({ modelUrl: './models/best.onnx' });
-const motionCtrl = tracker.startMotionDriven(video, onResult);
-// wire motionCtrl.onLandmarks() to your MediaPipe callback
+const tracker = await createEarlobeTracker({ modelUrl: './models/best.onnx', minIntervalMs: 50 });
+tracker.startLoop(video, onResult);
 ```
 
 Serve your page over **HTTPS** (required for camera on many phones). Close other tabs before loading — the ONNX model + WASM runtime need ~50–80 MB.
 
-### Standalone export (no npm)
-
-After **Export** in the training UI, open `export/web-library/README.txt`. Serve the folder with any static server and open `example.html` (includes ONNX Runtime CDN import map).
-
-### Test demo in this repo
+### Test export
 
 ```powershell
-npm run dev
+cd export/web-library
+python -m http.server 8080
 ```
 
-Open `http://localhost:5173/examples/mediapipe-trigger.html` (motion trigger) or `earlobe-only.html` (interval)
+Open `http://localhost:8080/example.html`
 
 ---
 

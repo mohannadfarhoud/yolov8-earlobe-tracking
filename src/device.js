@@ -20,3 +20,16 @@ export function getMobileCameraConstraints() {
     },
   };
 }
+
+/**
+ * Read actual camera FPS from a playing video element (after getUserMedia).
+ * @param {HTMLVideoElement} video
+ * @returns {number | null}
+ */
+export function getVideoFps(video) {
+  if (!video?.srcObject) return null;
+  const tracks = video.srcObject.getVideoTracks?.();
+  if (!tracks?.length) return null;
+  const rate = tracks[0].getSettings?.().frameRate;
+  return rate && rate > 0 ? Math.round(rate) : null;
+}

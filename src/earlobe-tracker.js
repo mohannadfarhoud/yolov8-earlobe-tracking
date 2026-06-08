@@ -1,12 +1,11 @@
 /**
- * Browser library: detect left and/or right earlobe from a trained 2-class pose model.
- * useWorker: true (default) runs ONNX in a Web Worker so your UI stays smooth.
+ * Abstract earlobe detection library.
+ * FPS-based scan cycles — pass `fps` at init; no MediaPipe or UI events required.
  */
 
-import { isMobileDevice } from './device.js';
+import { getVideoFps, isMobileDevice } from './device.js';
 import { decodeBothEars } from './decoder.js';
 import { letterboxFromCanvas, letterboxToTensor, mapToScreen, mapToSource } from './letterbox.js';
-import { MotionTrigger } from './motion-trigger.js';
 import { createSession, runInference } from './onnx-engine.js';
 import { EarPointSmoother, smoothBothEars } from './smoothing.js';
 import { DEFAULT_TRACKING_CFG } from './tracking-defaults.js';
@@ -14,6 +13,19 @@ import { EarlobeWorkerClient } from './worker-client.js';
 
 const EMPTY = { left: null, right: null };
 const TENSOR_SIZE = 1 * 3 * 640 * 640;
+
+function resolveScanTiming(options, mobile) {
+  if (options.fps != null && options.fps > 0) {
+    const fps = options.fps;
+    return { fps, scanIntervalMs: 1000 / fps };
+  }
+  if (options.minIntervalMs != null && options.minIntervalMs > 0) {
+    const scanIntervalMs = options.minIntervalMs;
+    return { fps: 1000 / scanIntervalMs, scanIntervalMs };
+  }
+  const fps = mobile ? DEFAULT_TRACKING_CFG.mobileDefaultFps : DEFAULT_TRACKING_CFG.defaultFps;
+  return { fps, scanIntervalMs: 1000 / fps };
+}
 
 function mapEar(ear, lb, mirrorX) {
   if (!ear) return null;
@@ -62,15 +74,7 @@ export async function createEarlobeTracker(options = {}) {
   const useWorker = options.useWorker !== false && typeof Worker !== 'undefined';
   const useGpu = mobile ? false : options.useGpu === true;
 
-  const defaultInterval = useWorker
-    ? mobile
-      ? DEFAULT_TRACKING_CFG.workerMobileInferenceIntervalMs
-      : DEFAULT_TRACKING_CFG.workerInferenceIntervalMs
-    : mobile
-      ? DEFAULT_TRACKING_CFG.mobileInferenceIntervalMs
-      : DEFAULT_TRACKING_CFG.inferenceIntervalMs;
-
-  const minIntervalMs = options.minIntervalMs ?? defaultInterval;
+  let { fps, scanIntervalMs } = resolveScanTiming(options, mobile);
   const maxCaptureSide =
     options.maxCaptureSide ??
     (mobile ? DEFAULT_TRACKING_CFG.mobileMaxCaptureSide : DEFAULT_TRACKING_CFG.desktopMaxCaptureSide);
@@ -91,7 +95,7 @@ export async function createEarlobeTracker(options = {}) {
         useGpu,
       });
       usingWorker = true;
-      console.info('Earlobe tracker: ONNX running in Web Worker');
+      console.info(`Earlobe tracker: Web Worker, ${fps} FPS (${scanIntervalMs.toFixed(1)}ms/cycle)`);
     } catch (e) {
       console.warn('Earlobe worker failed, falling back to main thread:', e);
       workerClient?.dispose();
@@ -104,7 +108,7 @@ export async function createEarlobeTracker(options = {}) {
     session = created.session;
     inputName = created.inputName;
     tensorReuse = {};
-    console.info('Earlobe tracker: ONNX on main thread');
+    console.info(`Earlobe tracker: main thread, ${fps} FPS (${scanIntervalMs.toFixed(1)}ms/cycle)`);
   }
 
   const offscreen = document.createElement('canvas');
@@ -116,6 +120,7 @@ export async function createEarlobeTracker(options = {}) {
   let lastResult = { ...EMPTY };
   let loopInferTimer = 0;
   let loopRaf = 0;
+  let videoFrameHandle = 0;
   let loopRunning = false;
   let disposed = false;
   let onVisibilityChange = null;
@@ -140,12 +145,9 @@ export async function createEarlobeTracker(options = {}) {
     };
   }
 
-  async function detect(frameSource) {
-    if (disposed) return lastResult;
-    if (inferBusy) return lastResult;
-
-    const now = performance.now();
-    if (now - lastInfer < minIntervalMs) return lastResult;
+  /** One clean scan cycle — no overlap, no double throttle. */
+  async function runScanCycle(frameSource) {
+    if (disposed || inferBusy) return lastResult;
 
     let lb;
     if (frameSource instanceof HTMLVideoElement) {
@@ -155,7 +157,7 @@ export async function createEarlobeTracker(options = {}) {
       if (!frameSource.width) return lastResult;
       lb = letterboxFromCanvas(frameSource, offscreen, tensorBuf);
     } else {
-      throw new Error('detect() requires HTMLVideoElement or HTMLCanvasElement');
+      throw new Error('scan requires HTMLVideoElement or HTMLCanvasElement');
     }
 
     inferBusy = true;
@@ -168,11 +170,18 @@ export async function createEarlobeTracker(options = {}) {
       }
       return lastResult;
     } catch (e) {
-      console.error('Earlobe detect failed:', e);
+      console.error('Earlobe scan failed:', e);
       return lastResult;
     } finally {
       inferBusy = false;
     }
+  }
+
+  async function detect(frameSource) {
+    if (disposed) return lastResult;
+    const now = performance.now();
+    if (inferBusy || now - lastInfer < scanIntervalMs) return lastResult;
+    return runScanCycle(frameSource);
   }
 
   function requestDetect(frameSource) {
@@ -190,6 +199,17 @@ export async function createEarlobeTracker(options = {}) {
     return smoothBothEars(lastResult, smoothers, now);
   }
 
+  /** Re-read camera FPS from video track and update scan interval. */
+  function syncFpsFromVideo(video) {
+    const live = getVideoFps(video);
+    if (live && live > 0) {
+      fps = live;
+      scanIntervalMs = 1000 / fps;
+      console.info(`Earlobe tracker: synced to camera ${fps} FPS`);
+    }
+    return fps;
+  }
+
   function bindVisibilityStop() {
     if (onVisibilityChange) {
       document.removeEventListener('visibilitychange', onVisibilityChange);
@@ -200,8 +220,40 @@ export async function createEarlobeTracker(options = {}) {
     document.addEventListener('visibilitychange', onVisibilityChange);
   }
 
-  function startDisplayLoop(frameSource, onResult, loopOpts = {}) {
-    stopLoop();
+  /**
+   * FPS scan loop — one attempt per video frame (requestVideoFrameCallback).
+   * Skips frame if previous scan still running (clean cycles, no pile-up).
+   */
+  function startFpsScanLoop(frameSource) {
+    const tryScan = (now) => {
+      if (!inferBusy && now - lastInfer >= scanIntervalMs) {
+        runScanCycle(frameSource).catch((e) => console.error(e));
+      }
+    };
+
+    if (frameSource instanceof HTMLVideoElement && frameSource.requestVideoFrameCallback) {
+      const onVideoFrame = (now) => {
+        if (!loopRunning || disposed) return;
+        tryScan(now);
+        videoFrameHandle = frameSource.requestVideoFrameCallback(onVideoFrame);
+      };
+      videoFrameHandle = frameSource.requestVideoFrameCallback(onVideoFrame);
+      return;
+    }
+
+    const run = async () => {
+      if (!loopRunning || disposed) return;
+      const t0 = performance.now();
+      tryScan(t0);
+      if (!loopRunning || disposed) return;
+      const elapsed = performance.now() - t0;
+      const wait = Math.max(0, scanIntervalMs - elapsed);
+      loopInferTimer = window.setTimeout(run, wait);
+    };
+    run();
+  }
+
+  function startDisplayLoop(frameSource, onResult) {
     boundFrameSource = frameSource;
     smoothers = makeSmoothers(options, mobile);
     loopRunning = true;
@@ -213,63 +265,32 @@ export async function createEarlobeTracker(options = {}) {
       loopRaf = requestAnimationFrame(displayTick);
     };
     loopRaf = requestAnimationFrame(displayTick);
-
-    if (loopOpts.initialDetect !== false) {
-      requestDetect(frameSource).catch((e) => console.error(e));
-    }
-
-    return stopLoop;
   }
 
-  function startMotionDriven(frameSource, onResult, loopOpts = {}) {
-    const motionTrigger = loopOpts.motionTrigger ?? new MotionTrigger(loopOpts.motionTriggerOptions);
-    const shouldDetect = loopOpts.shouldDetect;
-
-    startDisplayLoop(frameSource, onResult, loopOpts);
-
-    function onLandmarks(landmarks) {
-      if (!loopRunning || disposed) return;
-      const fire = shouldDetect ? shouldDetect(landmarks) : motionTrigger.check(landmarks);
-      if (fire) {
-        requestDetect(frameSource).catch((e) => console.error(e));
-      }
-    }
-
-    return {
-      stop: stopLoop,
-      onLandmarks,
-      requestDetect: () => requestDetect(frameSource),
-      motionTrigger,
-    };
-  }
-
+  /**
+   * Start FPS-based scanning. Pass video after camera is playing.
+   * @param {HTMLVideoElement|HTMLCanvasElement} frameSource
+   * @param {(result: { left, right }) => void} onResult
+   * @param {{ syncFps?: boolean }} [loopOpts] syncFps: read FPS from video track on start
+   */
   function startLoop(frameSource, onResult, loopOpts = {}) {
     stopLoop();
-    const inferInterval = loopOpts.intervalMs ?? minIntervalMs;
     boundFrameSource = frameSource;
-    smoothers = makeSmoothers(options, mobile);
-    loopRunning = true;
-    bindVisibilityStop();
 
-    const scheduleInfer = () => {
-      if (!loopRunning || disposed) return;
-      if (!inferBusy) requestDetect(frameSource).catch((e) => console.error(e));
-      loopInferTimer = window.setTimeout(scheduleInfer, inferInterval);
-    };
-    scheduleInfer();
+    if (loopOpts.syncFps !== false && frameSource instanceof HTMLVideoElement) {
+      syncFpsFromVideo(frameSource);
+    }
 
-    const displayTick = (now) => {
-      if (!loopRunning || disposed) return;
-      onResult(getSmoothedResult(now));
-      loopRaf = requestAnimationFrame(displayTick);
-    };
-    loopRaf = requestAnimationFrame(displayTick);
+    startDisplayLoop(frameSource, onResult);
+    startFpsScanLoop(frameSource);
 
+    runScanCycle(frameSource).catch((e) => console.error(e));
     return stopLoop;
   }
 
   function stopLoop() {
     loopRunning = false;
+    const src = boundFrameSource;
     boundFrameSource = null;
     if (loopInferTimer) {
       clearTimeout(loopInferTimer);
@@ -278,6 +299,12 @@ export async function createEarlobeTracker(options = {}) {
     if (loopRaf) {
       cancelAnimationFrame(loopRaf);
       loopRaf = 0;
+    }
+    if (videoFrameHandle && src?.cancelVideoFrameCallback) {
+      try {
+        src.cancelVideoFrameCallback(videoFrameHandle);
+      } catch (_) {}
+      videoFrameHandle = 0;
     }
   }
 
@@ -309,14 +336,25 @@ export async function createEarlobeTracker(options = {}) {
     requestDetect,
     detectSide,
     startLoop,
-    startDisplayLoop,
-    startMotionDriven,
     stopLoop,
     dispose,
+    syncFpsFromVideo,
     getLastResult: () => lastResult,
     getSmoothedResult,
     isMobile: mobile,
     usingWorker,
+    fps,
+    scanIntervalMs,
+    get minIntervalMs() {
+      return scanIntervalMs;
+    },
+    getStats: () => ({
+      fps,
+      scanIntervalMs,
+      lastInfer,
+      inferBusy,
+      usingWorker,
+    }),
   };
 }
 
@@ -328,7 +366,6 @@ function disposeTensor(t) {
   }
 }
 
-export { isMobileDevice, getMobileCameraConstraints } from './device.js';
-export { MotionTrigger, MEDIAPIPE_LANDMARKS } from './motion-trigger.js';
+export { isMobileDevice, getMobileCameraConstraints, getVideoFps } from './device.js';
 export { EarlobeWorkerClient } from './worker-client.js';
 export default createEarlobeTracker;

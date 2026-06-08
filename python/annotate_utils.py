@@ -192,7 +192,6 @@ def export_web_library(root_project: Path, model_path: Optional[Path] = None) ->
         ("src/worker-client.js", "src/worker-client.js"),
         ("config/tracking.json", "config/tracking.json"),
         ("examples/standalone-export.html", "example.html"),
-        ("examples/mediapipe-export.html", "example-mediapipe.html"),
     ]
     for src_rel, dest_rel in copies:
         src = root_project / src_rel
@@ -201,27 +200,18 @@ def export_web_library(root_project: Path, model_path: Optional[Path] = None) ->
 
     readme = export_dir / "README.txt"
     readme.write_text(
-        "Earlobe web library export\n"
-        "==========================\n\n"
-        "RECOMMENDED — Web Worker + MediaPipe motion trigger:\n"
-        "  const tracker = await createEarlobeTracker({\n"
-        "    modelUrl: './models/best.onnx',\n"
-        "    useWorker: true,  // default — ONNX off UI thread\n"
-        "  });\n"
-        "  const ctrl = tracker.startMotionDriven(video, onResult);\n"
-        "  ctrl.onLandmarks(faceLandmarks[0]);  // in MediaPipe callback\n"
-        "  See example-mediapipe.html\n\n"
-        "Avoid browser crashes:\n"
-        "  1. useWorker: true (default) keeps your UI smooth\n"
-        "  2. Use startMotionDriven() — NOT detect() in a tight loop\n"
-        "  3. minIntervalMs cooldown still applies (~66ms phone with worker)\n"
-        "  4. Use getMobileCameraConstraints() for getUserMedia\n"
-        "  5. Serve over https or http://localhost — not file://\n\n"
-        "Quick test:\n"
-        "  python -m http.server 8080\n"
-        "  http://localhost:8080/example-mediapipe.html\n\n"
-        "Interval fallback:\n"
-        "  tracker.startLoop(video, ({ left, right }) => { ... });\n",
+        "Earlobe detection library (for your UI app)\n"
+        "=========================================\n\n"
+        "Abstract library — coordinates only. No MediaPipe, no overlays.\n"
+        "Copy this folder into your project. Full API: docs/LIBRARY.md in repo.\n\n"
+        "Integration (FPS-based — no MediaPipe):\n"
+        "  import { createEarlobeTracker, getVideoFps } from './src/earlobe-tracker.js';\n"
+        "  const fps = getVideoFps(video) ?? 15;\n"
+        "  const tracker = await createEarlobeTracker({ modelUrl: './models/best.onnx', fps });\n"
+        "  tracker.startLoop(video, ({ left, right }) => { /* your UI */ });\n\n"
+        "Files required: all of src/ (including earlobe-worker.js)\n"
+        "onnxruntime-web: npm install OR import map in example.html\n\n"
+        "Test: python -m http.server 8080 → http://localhost:8080/example.html\n",
         encoding="utf-8",
     )
     return {
