@@ -67,14 +67,55 @@ class TrainState:
     def __init__(self) -> None:
         self.lock = threading.Lock()
         self.running = False
+        self._starting = False
         self.lines: list[str] = []
         self.returncode: int | None = None
+        self._proc: subprocess.Popen | None = None
 
-    def reset(self) -> None:
+    def _reconcile_unlocked(self) -> None:
+        if not self.running and not self._starting:
+            return
+        if self._proc is not None and self._proc.poll() is not None:
+            if self.returncode is None:
+                self.returncode = self._proc.returncode
+            self.running = False
+            self._starting = False
+            self._proc = None
+
+    def reconcile(self) -> None:
         with self.lock:
-            self.running = True
+            self._reconcile_unlocked()
+
+    def is_active(self) -> bool:
+        with self.lock:
+            self._reconcile_unlocked()
+            if self._starting:
+                return True
+            if not self.running:
+                return False
+            if self._proc is None:
+                return False
+            return self._proc.poll() is None
+
+    def try_begin(self) -> bool:
+        with self.lock:
+            self._reconcile_unlocked()
+            if self._starting:
+                return False
+            if self._proc is not None and self._proc.poll() is None:
+                return False
             self.lines = []
             self.returncode = None
+            self._proc = None
+            self.running = False
+            self._starting = True
+            return True
+
+    def attach_proc(self, proc: subprocess.Popen) -> None:
+        with self.lock:
+            self._proc = proc
+            self._starting = False
+            self.running = True
 
     def append(self, line: str) -> None:
         with self.lock:
@@ -85,12 +126,29 @@ class TrainState:
     def finish(self, code: int) -> None:
         with self.lock:
             self.running = False
+            self._starting = False
             self.returncode = code
+            self._proc = None
+
+    def cancel(self) -> bool:
+        with self.lock:
+            proc = self._proc
+            if proc is not None and proc.poll() is None:
+                proc.terminate()
+                return True
+            if self._starting or self.running:
+                self.running = False
+                self._starting = False
+                self._proc = None
+                self.append("--- Training cancelled (stale state cleared) ---")
+                return True
+            return False
 
     def snapshot(self) -> dict:
         with self.lock:
+            self._reconcile_unlocked()
             return {
-                "running": self.running,
+                "running": self.running or self._starting,
                 "lines": list(self.lines),
                 "returncode": self.returncode,
             }
@@ -417,6 +475,7 @@ def _train_worker(params: TrainParams) -> None:
         "--patience",
         str(params.patience),
     ]
+    code = 1
     try:
         proc = subprocess.Popen(
             cmd,
@@ -427,30 +486,37 @@ def _train_worker(params: TrainParams) -> None:
             encoding="utf-8",
             errors="replace",
         )
+        train_state.attach_proc(proc)
         assert proc.stdout is not None
         for line in proc.stdout:
             train_state.append(line)
         proc.wait()
-        train_state.append(f"\n--- Finished (exit {proc.returncode}) ---")
+        code = proc.returncode or 0
+        train_state.append(f"\n--- Finished (exit {code}) ---")
         if ONNX_PATH.is_file():
             train_state.append(f"ONNX ready: {ONNX_PATH}")
-        train_state.finish(proc.returncode or 0)
     except Exception as e:
         train_state.append(f"ERROR: {e}")
-        train_state.finish(1)
+        code = 1
+    finally:
+        train_state.finish(code)
 
 
 @app.post("/api/train/start")
 def api_train_start(params: TrainParams):
     if not DATA_YAML.is_file():
         raise HTTPException(400, "data.yaml missing — save dataset config first")
-    snap = train_state.snapshot()
-    if snap["running"]:
+    if not train_state.try_begin():
         raise HTTPException(409, "Training already running")
-    train_state.reset()
     thread = threading.Thread(target=_train_worker, args=(params,), daemon=True)
     thread.start()
     return {"ok": True, "message": "Training started"}
+
+
+@app.post("/api/train/cancel")
+def api_train_cancel():
+    cancelled = train_state.cancel()
+    return {"ok": True, "cancelled": cancelled}
 
 
 @app.get("/api/train/status")
@@ -591,6 +657,7 @@ def _train_worker_side(params: TrainParams) -> None:
         "--patience",
         str(params.patience),
     ]
+    code = 1
     try:
         proc = subprocess.Popen(
             cmd,
@@ -601,30 +668,37 @@ def _train_worker_side(params: TrainParams) -> None:
             encoding="utf-8",
             errors="replace",
         )
+        train_state_side.attach_proc(proc)
         assert proc.stdout is not None
         for line in proc.stdout:
             train_state_side.append(line)
         proc.wait()
-        train_state_side.append(f"\n--- Finished (exit {proc.returncode}) ---")
+        code = proc.returncode or 0
+        train_state_side.append(f"\n--- Finished (exit {code}) ---")
         if ONNX_PATH_SIDE.is_file():
             train_state_side.append(f"ONNX ready: {ONNX_PATH_SIDE}")
-        train_state_side.finish(proc.returncode or 0)
     except Exception as e:
         train_state_side.append(f"ERROR: {e}")
-        train_state_side.finish(1)
+        code = 1
+    finally:
+        train_state_side.finish(code)
 
 
 @app.post("/api/side-ear/train/start")
 def api_side_ear_train_start(params: TrainParams):
     if not DATA_YAML_SIDE.is_file():
         raise HTTPException(400, "data.side-ear.yaml missing — annotate side-ear dataset first")
-    snap = train_state_side.snapshot()
-    if snap["running"]:
+    if not train_state_side.try_begin():
         raise HTTPException(409, "Side-ear training already running")
-    train_state_side.reset()
     thread = threading.Thread(target=_train_worker_side, args=(params,), daemon=True)
     thread.start()
     return {"ok": True, "message": "Side-ear training started"}
+
+
+@app.post("/api/side-ear/train/cancel")
+def api_side_ear_train_cancel():
+    cancelled = train_state_side.cancel()
+    return {"ok": True, "cancelled": cancelled}
 
 
 @app.get("/api/side-ear/train/status")

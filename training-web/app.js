@@ -444,6 +444,24 @@
     $('btn-train').disabled = false;
   }
 
+  function startPoll() {
+    stopPoll();
+    $('btn-train').disabled = true;
+    $('train-badge').classList.remove('hidden');
+    pollTimer = setInterval(pollTrainLog, 800);
+    pollTrainLog();
+  }
+
+  async function syncTrainStatus() {
+    try {
+      var r = await api('/api/train/status');
+      if (r.lines && r.lines.length) {
+        setLog('log-train', r.lines.join('\n'));
+      }
+      if (r.running) startPoll();
+    } catch (_) {}
+  }
+
   async function pollTrainLog() {
     var r = await api('/api/train/status');
     setLog('log-train', r.lines.join('\n') || '…');
@@ -471,9 +489,6 @@
 
     $('btn-train').addEventListener('click', async function () {
       setLog('log-train', 'Starting…');
-      $('btn-train').disabled = true;
-      $('train-badge').classList.remove('hidden');
-      stopPoll();
       try {
         await api('/api/annotate/prepare-train', {
           method: 'POST',
@@ -489,13 +504,38 @@
             patience: Number($('patience').value),
           }),
         });
-        pollTimer = setInterval(pollTrainLog, 800);
-        pollTrainLog();
+        startPoll();
       } catch (e) {
+        var msg = String(e);
+        if (msg.indexOf('already running') >= 0) {
+          setLog(
+            'log-train',
+            msg + '\n\nClick "Cancel / reset stuck" then try Start training again.',
+            true
+          );
+        } else {
+          stopPoll();
+          setLog('log-train', msg, true);
+        }
+      }
+    });
+
+    $('btn-train-cancel').addEventListener('click', async function () {
+      try {
+        var r = await api('/api/train/cancel', { method: 'POST' });
         stopPoll();
+        setLog(
+          'log-train',
+          r.cancelled
+            ? 'Training cancelled. You can start again.'
+            : 'No active training — state cleared. You can start again.'
+        );
+      } catch (e) {
         setLog('log-train', String(e), true);
       }
     });
+
+    syncTrainStatus();
   }
 
   function initExport() {

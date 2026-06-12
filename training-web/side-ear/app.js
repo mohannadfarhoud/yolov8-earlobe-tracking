@@ -386,6 +386,29 @@
     $('btn-train').disabled = false;
   }
 
+  function startPoll() {
+    stopPoll();
+    $('btn-train').disabled = true;
+    $('train-badge').classList.remove('hidden');
+    pollTimer = setInterval(async function () {
+      try {
+        var r = await api('/train/status');
+        setLog('log-train', r.lines.join('\n') || '…');
+        if (!r.running) stopPoll();
+      } catch (_) {}
+    }, 800);
+  }
+
+  async function syncTrainStatus() {
+    try {
+      var r = await api('/train/status');
+      if (r.lines && r.lines.length) {
+        setLog('log-train', r.lines.join('\n'));
+      }
+      if (r.running) startPoll();
+    } catch (_) {}
+  }
+
   function initTrain() {
     $('btn-prepare').addEventListener('click', async function () {
       try {
@@ -400,9 +423,7 @@
     });
 
     $('btn-train').addEventListener('click', async function () {
-      $('btn-train').disabled = true;
-      $('train-badge').classList.remove('hidden');
-      stopPoll();
+      setLog('log-train', 'Starting…');
       try {
         await api('/annotate/prepare-train', {
           method: 'POST',
@@ -418,16 +439,38 @@
             patience: Number($('patience').value),
           }),
         });
-        pollTimer = setInterval(async function () {
-          var r = await api('/train/status');
-          setLog('log-train', r.lines.join('\n') || '…');
-          if (!r.running) stopPoll();
-        }, 800);
+        startPoll();
       } catch (e) {
+        var msg = String(e);
+        if (msg.indexOf('already running') >= 0) {
+          setLog(
+            'log-train',
+            msg + '\n\nClick "Cancel / reset stuck" then try Start training again.',
+            true
+          );
+        } else {
+          stopPoll();
+          setLog('log-train', msg, true);
+        }
+      }
+    });
+
+    $('btn-train-cancel').addEventListener('click', async function () {
+      try {
+        var r = await api('/train/cancel', { method: 'POST' });
         stopPoll();
+        setLog(
+          'log-train',
+          r.cancelled
+            ? 'Training cancelled. You can start again.'
+            : 'No active training — state cleared. You can start again.'
+        );
+      } catch (e) {
         setLog('log-train', String(e), true);
       }
     });
+
+    syncTrainStatus();
   }
 
   function initExport() {

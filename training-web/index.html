@@ -107,8 +107,11 @@
           <label>GPU <input type="text" id="device" value="0" /></label>
           <label>Patience <input type="number" id="patience" value="20" min="5" max="50" /></label>
         </div>
-        <button type="button" id="btn-train" class="primary">Start training</button>
-        <span id="train-badge" class="badge hidden">Running…</span>
+        <div class="row">
+          <button type="button" id="btn-train" class="primary">Start training</button>
+          <button type="button" id="btn-train-cancel">Cancel / reset stuck</button>
+          <span id="train-badge" class="badge hidden">Running…</span>
+        </div>
         <pre id="log-train" class="log tall"></pre>
       </section>
 
@@ -131,6 +134,6 @@
       </section>
     </main>
 
-    <script defer src="/assets/app.js?v=7"></script>
+    <script defer src="/assets/app.js?v=8"></script>
   </body>
 </html>
