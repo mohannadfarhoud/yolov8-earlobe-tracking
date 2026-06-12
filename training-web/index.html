@@ -4,19 +4,32 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Earlobe Training</title>
-    <link rel="stylesheet" href="/assets/styles.css" />
+    <link rel="stylesheet" href="/assets/styles.css?v=2" />
   </head>
-  <body>
-    <header>
-      <h1>Front-face earlobe training</h1>
-      <p>Upload faces → click earlobe → train → export <code>web-library</code>.</p>
-      <p class="nav-links">
-        <a href="/side-ear/">Side-ear training (4 points) →</a>
-      </p>
+  <body class="mode-front">
+    <header class="app-header">
+      <p class="app-brand">Ear training studio</p>
+      <nav class="mode-switcher" aria-label="Training type">
+        <a href="/" class="mode-tab mode-tab-front is-active" aria-current="page">
+          <span class="mode-tab-badge">Active</span>
+          <span class="mode-tab-title">Front-face earlobe</span>
+          <span class="mode-tab-meta">Face photos · 1 point per ear · Left / Right</span>
+          <span class="mode-tab-export">Export: <code>web-library</code></span>
+        </a>
+        <a href="/side-ear/" class="mode-tab mode-tab-side">
+          <span class="mode-tab-title">Side ear</span>
+          <span class="mode-tab-meta">Profile ear · 4 points · Earring anchors</span>
+          <span class="mode-tab-export">Export: <code>side-ear-library</code></span>
+        </a>
+      </nav>
       <p id="api-status" class="api-status">Connecting to server…</p>
     </header>
 
-    <nav class="tabs" role="tablist">
+    <div class="mode-banner mode-banner-front">
+      <strong>Front-face mode</strong> — Mark the earlobe on selfie/front photos. Use a separate dataset folder from side-ear.
+    </div>
+
+    <nav class="tabs workflow-tabs" role="tablist">
       <button type="button" class="tab active" data-tab="annotate">1. Annotate</button>
       <button type="button" class="tab" data-tab="train">2. Train</button>
       <button type="button" class="tab" data-tab="export">3. Export</button>
@@ -118,6 +131,6 @@
       </section>
     </main>
 
-    <script defer src="/assets/app.js?v=6"></script>
+    <script defer src="/assets/app.js?v=7"></script>
   </body>
 </html>

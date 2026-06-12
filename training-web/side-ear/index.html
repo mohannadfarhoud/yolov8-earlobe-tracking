@@ -4,19 +4,32 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Side-ear training (4 points)</title>
-    <link rel="stylesheet" href="/assets/styles.css" />
+    <link rel="stylesheet" href="/assets/styles.css?v=2" />
   </head>
-  <body>
-    <header>
-      <h1>Side-ear model training</h1>
-      <p>Profile ear images → mark 4 points → train → export <code>side-ear-library</code>.</p>
-      <p class="nav-links">
-        <a href="/">← Front-face earlobe training (1 point)</a>
-      </p>
+  <body class="mode-side">
+    <header class="app-header">
+      <p class="app-brand">Ear training studio</p>
+      <nav class="mode-switcher" aria-label="Training type">
+        <a href="/" class="mode-tab mode-tab-front">
+          <span class="mode-tab-title">Front-face earlobe</span>
+          <span class="mode-tab-meta">Face photos · 1 point per ear · Left / Right</span>
+          <span class="mode-tab-export">Export: <code>web-library</code></span>
+        </a>
+        <a href="/side-ear/" class="mode-tab mode-tab-side is-active" aria-current="page">
+          <span class="mode-tab-badge">Active</span>
+          <span class="mode-tab-title">Side ear</span>
+          <span class="mode-tab-meta">Profile ear · 4 points · Earring anchors</span>
+          <span class="mode-tab-export">Export: <code>side-ear-library</code></span>
+        </a>
+      </nav>
       <p id="api-status" class="api-status">Connecting to server…</p>
     </header>
 
-    <nav class="tabs" role="tablist">
+    <div class="mode-banner mode-banner-side">
+      <strong>Side-ear mode</strong> — Mark earlobe + 3 earring positions on profile/side ear photos. Different dataset &amp; model from front-face.
+    </div>
+
+    <nav class="tabs workflow-tabs" role="tablist">
       <button type="button" class="tab active" data-tab="annotate">1. Annotate</button>
       <button type="button" class="tab" data-tab="train">2. Train</button>
       <button type="button" class="tab" data-tab="export">3. Export</button>
@@ -120,6 +133,6 @@
       </section>
     </main>
 
-    <script defer src="/side-ear/assets/app.js?v=1"></script>
+    <script defer src="/side-ear/assets/app.js?v=2"></script>
   </body>
 </html>
