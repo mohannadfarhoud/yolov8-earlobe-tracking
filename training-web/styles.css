@@ -351,7 +351,72 @@ main {
   box-shadow: 0 0 6px #fd6;
 }
 
-.ear-mode .mode-btn.active {
+/* Side-ear point buttons — match marker colors */
+.kpt-btn[data-kpt="0"] {
+  border-color: #ff6b9d;
+  color: #ffc0d8;
+}
+
+.kpt-btn[data-kpt="1"] {
+  border-color: #6bff9d;
+  color: #b8ffd4;
+}
+
+.kpt-btn[data-kpt="2"] {
+  border-color: #6b9dff;
+  color: #b8d4ff;
+}
+
+.kpt-btn[data-kpt="3"] {
+  border-color: #ffd76b;
+  color: #ffe8a8;
+}
+
+.kpt-btn[data-kpt="0"].active {
+  background: #ff6b9d;
+  border-color: #ff8ab5;
+  color: #1a0810;
+  box-shadow: 0 0 10px rgba(255, 107, 157, 0.55);
+}
+
+.kpt-btn[data-kpt="1"].active {
+  background: #6bff9d;
+  border-color: #8dffc0;
+  color: #081a10;
+  box-shadow: 0 0 10px rgba(107, 255, 157, 0.55);
+}
+
+.kpt-btn[data-kpt="2"].active {
+  background: #6b9dff;
+  border-color: #8db8ff;
+  color: #081018;
+  box-shadow: 0 0 10px rgba(107, 157, 255, 0.55);
+}
+
+.kpt-btn[data-kpt="3"].active {
+  background: #ffd76b;
+  border-color: #ffe08a;
+  color: #1a1408;
+  box-shadow: 0 0 10px rgba(255, 215, 107, 0.55);
+}
+
+.kpt-btn[data-kpt="0"]:hover:not(.active) {
+  background: rgba(255, 107, 157, 0.15);
+}
+
+.kpt-btn[data-kpt="1"]:hover:not(.active) {
+  background: rgba(107, 255, 157, 0.15);
+}
+
+.kpt-btn[data-kpt="2"]:hover:not(.active) {
+  background: rgba(107, 157, 255, 0.15);
+}
+
+.kpt-btn[data-kpt="3"]:hover:not(.active) {
+  background: rgba(255, 215, 107, 0.15);
+}
+
+.ear-mode .mode-btn.active:not(.kpt-btn) {
   background: #3b6fc4;
   border-color: #6af;
 }
