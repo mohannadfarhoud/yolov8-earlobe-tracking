@@ -1,0 +1,9 @@
+{
+  "sideEarClassId": 0,
+  "numClasses": 1,
+  "numKpts": 4,
+  "selectionRule": "highest_conf",
+  "boxConfThreshold": 0.5,
+  "kptConfThreshold": 0.5,
+  "nmsIou": 0.45
+}

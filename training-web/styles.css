@@ -180,6 +180,35 @@ main {
   box-shadow: 0 0 6px #f84;
 }
 
+.marker-k0 {
+  background: #ff6b9d;
+  box-shadow: 0 0 6px #f6a;
+}
+
+.marker-k1 {
+  background: #6bff9d;
+  box-shadow: 0 0 6px #6f9;
+}
+
+.marker-k2 {
+  background: #6b9dff;
+  box-shadow: 0 0 6px #69f;
+}
+
+.marker-k3 {
+  background: #ffd76b;
+  box-shadow: 0 0 6px #fd6;
+}
+
+.nav-links a {
+  color: #7eb8ff;
+  text-decoration: none;
+}
+
+.nav-links a:hover {
+  text-decoration: underline;
+}
+
 .ear-mode .mode-btn.active {
   background: #3b6fc4;
   border-color: #6af;

@@ -210,3 +210,38 @@ export function decodeBothEars(raw, shape, cfg) {
 
   return { left: toEar(leftDet), right: toEar(rightDet) };
 }
+
+const SIDE_EAR_KPT_KEYS = ['earlobe', 'earPos1', 'earPos2', 'earPos3'];
+
+/**
+ * Decode side-ear detection with 4 keypoints (class 0).
+ * @returns {{ earlobe, earPos1, earPos2, earPos3 } | null} each { x, y, conf, detection } or null
+ */
+export function decodeSideEar(raw, shape, cfg) {
+  if (shape.length !== 3) return emptySideEarResult();
+  const channels = shape[1];
+  const anchors = shape[2];
+  if (channels < 1 || anchors < 1) return emptySideEarResult();
+
+  const numClasses = cfg.numClasses ?? 1;
+  const numKpts = cfg.numKpts ?? 4;
+  const flat = { anchors };
+  let candidates = decodeCandidates(raw, numClasses, numKpts, cfg.boxConfThreshold, flat);
+  candidates = nms(candidates, cfg.nmsIou ?? 0.45);
+  const det = selectDetection(candidates, cfg.selectionRule ?? 'highest_conf');
+  if (!det) return emptySideEarResult();
+
+  const result = emptySideEarResult();
+  for (let i = 0; i < Math.min(numKpts, SIDE_EAR_KPT_KEYS.length); i++) {
+    const kpt = det.kpts[i];
+    const key = SIDE_EAR_KPT_KEYS[i];
+    if (kpt && kpt.conf >= cfg.kptConfThreshold) {
+      result[key] = { x: kpt.x, y: kpt.y, conf: kpt.conf, detection: det };
+    }
+  }
+  return result;
+}
+
+function emptySideEarResult() {
+  return { earlobe: null, earPos1: null, earPos2: null, earPos3: null };
+}

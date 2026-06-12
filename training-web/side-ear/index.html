@@ -3,15 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Earlobe Training</title>
+    <title>Side-ear training (4 points)</title>
     <link rel="stylesheet" href="/assets/styles.css" />
   </head>
   <body>
     <header>
-      <h1>Front-face earlobe training</h1>
-      <p>Upload faces → click earlobe → train → export <code>web-library</code>.</p>
+      <h1>Side-ear model training</h1>
+      <p>Profile ear images → mark 4 points → train → export <code>side-ear-library</code>.</p>
       <p class="nav-links">
-        <a href="/side-ear/">Side-ear training (4 points) →</a>
+        <a href="/">← Front-face earlobe training (1 point)</a>
       </p>
       <p id="api-status" class="api-status">Connecting to server…</p>
     </header>
@@ -25,21 +25,20 @@
 
     <main>
       <section id="panel-annotate" class="panel active">
-        <h2>Upload &amp; label earlobe</h2>
+        <h2>Upload &amp; label side ear (4 points)</h2>
         <ol class="steps-hint">
-          <li>Enter dataset folder path below</li>
-          <li>Click <strong>Setup folder</strong> (once)</li>
-          <li>Click <strong>Upload images</strong> and choose face photos</li>
-          <li>Choose <strong>Left ear</strong> or <strong>Right ear</strong>, click on image (one or both per photo)</li>
+          <li>Use a <strong>separate dataset folder</strong> from front-face training</li>
+          <li>Upload profile/side ear photos</li>
+          <li>Click each point in order: <strong>Earlobe → Earring pos 1 → 2 → 3</strong></li>
           <li><strong>Save &amp; next</strong></li>
         </ol>
         <label>
-          Dataset folder
+          Dataset folder (side ear)
           <input
             type="text"
             id="dataset-root"
-            value="C:\earlobe-tracking\earlobe"
-            placeholder="C:\earlobe-tracking\earlobe"
+            value="C:\earlobe-tracking\side-ear"
+            placeholder="C:\earlobe-tracking\side-ear"
             spellcheck="false"
           />
         </label>
@@ -54,17 +53,20 @@
         <div class="annotate-layout">
           <ul id="image-list" class="image-list"></ul>
           <div class="annotate-stage">
-            <p class="hint">Pick which ear you are marking, then click on the earlobe. Mark one or both ears per photo.</p>
+            <p class="hint">Select active point, then click on the image. All 4 required before save.</p>
             <div class="row ear-mode">
-              <button type="button" id="btn-mode-left" class="mode-btn active" data-side="left">Left ear</button>
-              <button type="button" id="btn-mode-right" class="mode-btn" data-side="right">Right ear</button>
-              <button type="button" id="btn-clear-left">Clear left</button>
-              <button type="button" id="btn-clear-right">Clear right</button>
+              <button type="button" class="mode-btn kpt-btn active" data-kpt="0">0 Earlobe</button>
+              <button type="button" class="mode-btn kpt-btn" data-kpt="1">1 Earring</button>
+              <button type="button" class="mode-btn kpt-btn" data-kpt="2">2 Earring</button>
+              <button type="button" class="mode-btn kpt-btn" data-kpt="3">3 Earring</button>
+              <button type="button" id="btn-clear-all">Clear all</button>
             </div>
             <div id="canvas-wrap" class="canvas-wrap">
               <img id="annotate-img" alt="Select an image" />
-              <div id="marker-left" class="marker marker-left hidden"></div>
-              <div id="marker-right" class="marker marker-right hidden"></div>
+              <div id="marker-0" class="marker marker-k0 hidden"></div>
+              <div id="marker-1" class="marker marker-k1 hidden"></div>
+              <div id="marker-2" class="marker marker-k2 hidden"></div>
+              <div id="marker-3" class="marker marker-k3 hidden"></div>
             </div>
             <p id="click-info" class="hint"></p>
             <div class="row">
@@ -78,8 +80,8 @@
       </section>
 
       <section id="panel-train" class="panel">
-        <h2>Train model</h2>
-        <p>Requires annotated images. Prepares val split and data.yaml automatically.</p>
+        <h2>Train side-ear model</h2>
+        <p>Writes <code>data.side-ear.yaml</code> and exports <code>public/models/side-ear.onnx</code>.</p>
         <button type="button" id="btn-prepare" class="primary">Prepare for training</button>
         <pre id="log-prepare" class="log short"></pre>
         <div class="grid">
@@ -100,11 +102,11 @@
       </section>
 
       <section id="panel-export" class="panel">
-        <h2>Export web library</h2>
-        <p>After training, export <code>best.onnx</code> + JS files for your website.</p>
+        <h2>Export side-ear web library</h2>
+        <p>Exports to <code>export/side-ear-library/</code> — separate from front-face library.</p>
         <div class="row">
-          <button type="button" id="btn-export-lib" class="primary">Export web library</button>
-          <a id="link-download-zip" class="button-link hidden" href="/api/model/download-library" download
+          <button type="button" id="btn-export-lib" class="primary">Export side-ear library</button>
+          <a id="link-download-zip" class="button-link hidden" href="/api/side-ear/model/download-library" download
             >Download ZIP</a
           >
         </div>
@@ -118,6 +120,6 @@
       </section>
     </main>
 
-    <script defer src="/assets/app.js?v=6"></script>
+    <script defer src="/side-ear/assets/app.js?v=1"></script>
   </body>
 </html>

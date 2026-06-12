@@ -1,13 +1,13 @@
 # Earlobe tracking
 
-Two parts:
+Two training tracks:
 
-1. **Train** a YOLOv8-pose model → `best.onnx` (Python + web UI in this repo)
-2. **Use** the exported browser library in **your own UI app** → earlobe `{ x, y, confidence }`
+| Track | Training UI | Export | Points |
+|-------|-------------|--------|--------|
+| **Front-face earlobe** | http://127.0.0.1:8000/ | `export/web-library/` | 1 (L/R ears) |
+| **Side-ear** | http://127.0.0.1:8000/side-ear/ | `export/side-ear-library/` | 4 (earlobe + 3 earring) |
 
-The library is abstract: no MediaPipe, no try-on UI, no overlays — only detection.
-
-**Library API:** [docs/LIBRARY.md](docs/LIBRARY.md)  
+**Library APIs:** [docs/LIBRARY.md](docs/LIBRARY.md) · [docs/SIDE_EAR_LIBRARY.md](docs/SIDE_EAR_LIBRARY.md)  
 **Training guide:** [docs/TRAINING_AND_LIBRARY.md](docs/TRAINING_AND_LIBRARY.md)
 
 ---

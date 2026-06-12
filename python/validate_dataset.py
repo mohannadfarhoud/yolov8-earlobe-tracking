@@ -9,8 +9,6 @@ from pathlib import Path
 
 import yaml
 
-EXPECTED_KPT_COUNT = 1
-EXPECTED_DIMS_PER_KPT = 3
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
@@ -90,18 +88,18 @@ def scan_for_assets(root: Path) -> None:
                 print(f"  Found {ni} images, {nl} labels in: {name}")
 
 
-def count_label_lines(label_dir: Path) -> tuple[int, list[str]]:
+def count_label_lines(label_dir: Path, kpt_count: int, dims_per_kpt: int = 3) -> tuple[int, list[str]]:
     errors: list[str] = []
     labels = 0
     if not label_dir.is_dir():
         return 0, []
 
+    expected = 1 + 4 + kpt_count * dims_per_kpt
     for txt in label_dir.glob("*.txt"):
         labels += 1
         lines = [ln.strip() for ln in txt.read_text(encoding="utf-8").splitlines() if ln.strip()]
         for i, line in enumerate(lines):
             parts = line.split()
-            expected = 1 + 4 + EXPECTED_KPT_COUNT * EXPECTED_DIMS_PER_KPT
             if len(parts) != expected:
                 errors.append(
                     f"{txt.name}:{i + 1} expected {expected} fields, got {len(parts)}"
@@ -122,10 +120,13 @@ def validate(data_yaml: Path) -> int:
         return 1
 
     kpt_shape = cfg["kpt_shape"]
-    if list(kpt_shape) != [EXPECTED_KPT_COUNT, EXPECTED_DIMS_PER_KPT]:
-        print(
-            f"WARN: kpt_shape {kpt_shape} != expected [{EXPECTED_KPT_COUNT}, {EXPECTED_DIMS_PER_KPT}]"
-        )
+    if not isinstance(kpt_shape, (list, tuple)) or len(kpt_shape) != 2:
+        print(f"ERROR: kpt_shape must be [num_keypoints, dims], got {kpt_shape}")
+        return 1
+    kpt_count = int(kpt_shape[0])
+    dims_per_kpt = int(kpt_shape[1])
+    if dims_per_kpt != 3:
+        print(f"WARN: kpt_shape dims {dims_per_kpt} — expected 3 (x, y, visibility)")
 
     root = Path(cfg["path"])
     if not root.is_absolute():
@@ -140,7 +141,7 @@ def validate(data_yaml: Path) -> int:
         images_dir = resolve_split(root, cfg[split])
         labels_dir = resolve_labels_dir(images_dir)
         n_images = count_images(images_dir)
-        n_labels, errs = count_label_lines(labels_dir)
+        n_labels, errs = count_label_lines(labels_dir, kpt_count, dims_per_kpt)
 
         print(f"  {split}:")
         print(f"    images: {images_dir} -> {n_images} image files")
@@ -170,9 +171,8 @@ def validate(data_yaml: Path) -> int:
             print(f"    ... and {len(errs) - 10} more label format errors")
             exit_code = 1
 
-    if cfg.get("nc") != 2:
-        print(f"WARN: nc={cfg.get('nc')} — expected nc=2 (left_earlobe, right_earlobe)")
-    print("\nClasses: 0=left_earlobe, 1=right_earlobe (one or two lines per image)")
+    print(f"\nLabel format: {1 + 4 + kpt_count * dims_per_kpt} fields per line "
+          f"(class + box + {kpt_count} keypoints)")
 
     if exit_code != 0:
         scan_for_assets(root)

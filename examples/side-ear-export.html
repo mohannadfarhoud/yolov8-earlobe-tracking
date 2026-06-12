@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Side-ear library example</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 1rem; background: #111; color: #eee; }
+      video { max-width: 100%; border-radius: 8px; }
+      pre { background: #222; padding: 1rem; border-radius: 8px; font-size: 12px; }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "onnxruntime-web": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0/dist/ort.min.mjs"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <h1>Side-ear tracker (4 points)</h1>
+    <p>Earlobe + 3 earring anchor positions on profile ear.</p>
+    <video id="video" playsinline muted autoplay></video>
+    <p id="status">Loading…</p>
+    <pre id="out">{}</pre>
+    <script type="module">
+      import { createSideEarTracker, getVideoFps, getMobileCameraConstraints } from '../src/side-ear-tracker.js';
+
+      const video = document.getElementById('video');
+      const status = document.getElementById('status');
+      const out = document.getElementById('out');
+
+      const stream = await navigator.mediaDevices.getUserMedia(getMobileCameraConstraints());
+      video.srcObject = stream;
+      await video.play();
+
+      const fps = getVideoFps(video) ?? 15;
+      const tracker = await createSideEarTracker({
+        modelUrl: './models/side-ear.onnx',
+        mirrorX: true,
+        fps,
+        useWorker: true,
+      });
+
+      status.textContent = 'Ready — ' + tracker.fps + ' FPS';
+
+      tracker.startLoop(video, (result) => {
+        out.textContent = JSON.stringify(result, null, 2);
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,10 @@
+# Side-ear dataset — profile ear images, 4 keypoints per image
+# Copy to data.side-ear.yaml and set path to your dataset root.
+
+path: C:/earlobe-tracking/side-ear
+train: images/train
+val: images/val
+nc: 1
+names:
+  0: side_ear
+kpt_shape: [4, 3]
